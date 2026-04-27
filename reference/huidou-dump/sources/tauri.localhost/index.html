@@ -1,0 +1,91 @@
+
+      (function () {
+        var debug = document.getElementById('boot-debug');
+
+        function append(line) {
+          if (!debug) {
+            return;
+          }
+          debug.textContent = (debug.textContent ? debug.textContent + '\n' : '') + line;
+        }
+
+        window.addEventListener(
+          'error',
+          function (event) {
+            var msg = '';
+            try {
+              if (event && event.error && event.error.stack) {
+                msg = String(event.error.stack);
+              } else {
+                msg = String(event.message || event.type || 'error');
+              }
+            } catch (_) {
+              msg = 'error';
+            }
+            append('window.error=' + msg.split('\n')[0]);
+          },
+          true,
+        );
+
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = '';
+          try {
+            reason = event && event.reason ? String(event.reason) : 'unhandledrejection';
+          } catch (_) {
+            reason = 'unhandledrejection';
+          }
+          append('unhandledrejection=' + reason.split('\n')[0]);
+        });
+
+        function resolveEntryScriptSrc() {
+          var scripts = Array.prototype.slice.call(document.querySelectorAll('script[type="module"][src]'));
+          var srcs = scripts
+            .map(function (s) {
+              return s.getAttribute('src') || '';
+            })
+            .filter(Boolean);
+
+          var nonVite = srcs.filter(function (s) {
+            return s !== '@vite/client' && s.indexOf('vite/client') === -1;
+          });
+
+          return {
+            all: srcs,
+            entry: nonVite.length > 0 ? nonVite[nonVite.length - 1] : (srcs[srcs.length - 1] || ''),
+          };
+        }
+
+        setTimeout(function () {
+          if (window.__HUIDOU_APP_BOOTED__) {
+            return;
+          }
+          if (!debug) {
+            return;
+          }
+
+          var resolved = resolveEntryScriptSrc();
+          var entry = resolved.entry;
+
+          debug.textContent = '未检测到前端启动标记。';
+          append('module scripts=' + (resolved.all.length ? resolved.all.join(', ') : '(none)'));
+          append('entry src=' + entry);
+
+          if (!entry || typeof fetch !== 'function') {
+            return;
+          }
+
+          fetch(entry, { cache: 'no-store' })
+            .then(function (res) {
+              return res.text().then(function (text) {
+                var preview = text.slice(0, 260).replace(/\s+/g, ' ');
+                append('fetch status=' + res.status + ' ' + res.statusText);
+                append('content-type=' + (res.headers.get('content-type') || ''));
+                append('preview=' + preview);
+              });
+            })
+            .catch(function (err) {
+              append('fetch error=' + String(err));
+            });
+        }, 1500);
+      })();
+    

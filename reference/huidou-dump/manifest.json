@@ -1,0 +1,47 @@
+[
+  {
+    "url": "http://tauri.localhost/",
+    "file": "tauri.localhost\\index.html",
+    "size": 2879,
+    "hasSourceMap": false,
+    "sourceMapURL": ""
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-CMG-ejQn.js",
+    "file": "tauri.localhost\\assets\\index-CMG-ejQn.js",
+    "size": 2107764,
+    "hasSourceMap": false,
+    "sourceMapURL": ""
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-4MrD4Hpk.js",
+    "file": "tauri.localhost\\assets\\index-4MrD4Hpk.js",
+    "size": 69159,
+    "hasSourceMap": false,
+    "sourceMapURL": ""
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-DzzoR1hI.css",
+    "file": "tauri.localhost\\assets\\index-DzzoR1hI.css",
+    "type": "Stylesheet",
+    "size": 53836
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-C3mlJRSJ.css",
+    "file": "tauri.localhost\\assets\\index-C3mlJRSJ.css",
+    "type": "Stylesheet",
+    "size": 22074
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-4MrD4Hpk.js",
+    "file": "tauri.localhost\\assets\\index-4MrD4Hpk.js",
+    "type": "Script",
+    "size": 69159
+  },
+  {
+    "url": "http://tauri.localhost/assets/index-CMG-ejQn.js",
+    "file": "tauri.localhost\\assets\\index-CMG-ejQn.js",
+    "type": "Script",
+    "size": 2107764
+  }
+]
