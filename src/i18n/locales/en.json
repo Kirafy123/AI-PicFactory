@@ -1,7 +1,7 @@
 {
   "app": {
-    "title": "Storyboard Copilot",
-    "subtitle": "AI Storyboard Tool"
+    "title": "AI-PicFactory",
+    "subtitle": "AI-PicFactory"
   },
   "common": {
     "save": "Save",
@@ -282,7 +282,7 @@
     "getApiKeyLink": "click here to get API key",
     "missingAnyApiKeyMessage": "You have not configured any API keys yet. Please open Settings to configure one.",
     "openProvidersSettings": "Open Settings",
-    "aboutAppName": "Storyboard Copilot",
+    "aboutAppName": "AI-PicFactory",
     "aboutIntro": "An AI storyboard workstation based on a node canvas for generation, editing, and storyboard workflows.",
     "aboutVersionLabel": "Version",
     "aboutVersionUnknown": "Unknown",
