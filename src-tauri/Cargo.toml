@@ -1,6 +1,6 @@
 [package]
 name = "ai-picfactory"
-version = "0.1.13"
+version = "0.1.14"
 description = "AI-PicFactory - AI图像生成与分镜工具"
 authors = ["you"]
 edition = "2021"
