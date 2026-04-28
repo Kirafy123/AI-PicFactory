@@ -269,6 +269,8 @@ const vr360NodeDefinition: CanvasNodeDefinition<Vr360NodeData> = {
   createDefaultData: () => ({
     displayName: DEFAULT_NODE_DISPLAY_NAME[CANVAS_NODE_TYPES.vr360],
     backgroundUrl: null,
+    calibratedGroundY: 0,
+    calibratedSceneScale: 5,
   }),
 };
 

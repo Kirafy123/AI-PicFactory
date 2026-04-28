@@ -98,12 +98,13 @@ struct DrawRequestBody {
 struct GptImageRequestBody {
     model: String,
     prompt: String,
+    image_size: String,
+    aspect_ratio: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     urls: Option<Vec<String>>,
     /// 必须传 "-1" 让接口立即返回 id（走轮询模式），否则默认是 SSE 流式响应
     web_hook: String,
     shut_progress: bool,
-    aspect_ratio: String,
 }
 
 fn is_gpt_image_model(model: &str) -> bool {
@@ -254,6 +255,8 @@ impl GrsaiProvider {
         let body = GptImageRequestBody {
             model,
             prompt: request.prompt.clone(),
+            image_size: request.size.clone(),
+            aspect_ratio: request.aspect_ratio.clone(),
             urls: request
                 .reference_images
                 .as_ref()
@@ -266,7 +269,6 @@ impl GrsaiProvider {
                 .filter(|images| !images.is_empty()),
             web_hook: "-1".to_string(),
             shut_progress: true,
-            aspect_ratio: request.aspect_ratio.clone(),
         };
 
         if request

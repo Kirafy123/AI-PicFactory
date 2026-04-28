@@ -7,11 +7,6 @@ const ASPECT_RATIOS = [
   '9:16',
   '4:3',
   '3:4',
-  '3:2',
-  '2:3',
-  '5:4',
-  '4:5',
-  '21:9',
 ] as const;
 
 export const imageModel: ImageModelDefinition = {

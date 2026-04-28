@@ -146,6 +146,8 @@ export interface StoryboardGenNodeData {
 
 export interface Vr360NodeData extends NodeDisplayData {
   backgroundUrl: string | null;
+  calibratedGroundY: number;
+  calibratedSceneScale: number;
   [key: string]: unknown;
 }
 

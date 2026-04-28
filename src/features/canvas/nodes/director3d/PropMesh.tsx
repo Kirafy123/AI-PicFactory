@@ -274,6 +274,7 @@ export function PropGeometry({ propId, color, selected }: PropGeometryProps) {
 
 interface PropControllerProps {
   prop: PropState;
+  sceneScale: number;
   selected: boolean;
   onSelect: () => void;
   onTransformEnd: (position: [number, number, number], rotation: [number, number, number]) => void;
@@ -282,6 +283,7 @@ interface PropControllerProps {
 
 export function PropController({
   prop,
+  sceneScale,
   selected,
   onSelect,
   onTransformEnd,
@@ -296,6 +298,8 @@ export function PropController({
     onTransformEnd([p.x, p.y, p.z], [r.x, r.y, r.z]);
   }
 
+  const totalScale = prop.scale * sceneScale;
+
   return (
     <group>
       {selected && (
@@ -309,7 +313,7 @@ export function PropController({
         ref={meshRef}
         position={prop.position}
         rotation={prop.rotation}
-        scale={prop.scale}
+        scale={totalScale}
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
       >
         <PropGeometry propId={prop.propId} color={prop.color} selected={selected} />

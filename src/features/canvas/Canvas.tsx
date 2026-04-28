@@ -185,7 +185,11 @@ function resolveAllowedNodeTypes(handleType: HandleType): CanvasNodeType[] {
 }
 
 function canNodeTypeBeManualConnectionSource(type: CanvasNodeType): boolean {
-  return type === CANVAS_NODE_TYPES.upload || type === CANVAS_NODE_TYPES.exportImage;
+  return (
+    type === CANVAS_NODE_TYPES.upload ||
+    type === CANVAS_NODE_TYPES.exportImage ||
+    type === CANVAS_NODE_TYPES.vr360
+  );
 }
 
 function canNodeBeManualConnectionSource(nodeId: string | null | undefined, nodes: CanvasNode[]): boolean {

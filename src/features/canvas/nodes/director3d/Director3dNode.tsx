@@ -1,9 +1,14 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { Handle, Position } from '@xyflow/react';
 import { createPortal } from 'react-dom';
 
 import { useCanvasStore } from '@/stores/canvasStore';
-import { CANVAS_NODE_TYPES, type Director3dNodeData } from '@/features/canvas/domain/canvasNodes';
+import {
+  CANVAS_NODE_TYPES,
+  type Director3dNodeData,
+  type Vr360NodeData,
+  isVr360Node,
+} from '@/features/canvas/domain/canvasNodes';
 import { graphImageResolver } from '@/features/canvas/application/canvasServices';
 
 import { Director3dScene, type SelectedObject } from './Director3dScene';
@@ -21,6 +26,7 @@ interface Director3dNodeProps {
 }
 
 const MANNEQUIN_COLORS = ['#ef4444', '#22c55e', '#3b82f6', '#f59e0b', '#a855f7', '#ec4899'];
+
 
 function convertFileSrc(src: string): string {
   if (!src) return src;
@@ -45,9 +51,13 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
   const findNodePosition = useCanvasStore((s) => s.findNodePosition);
 
   const [fullscreen, setFullscreen] = useState(false);
+  const [groundY, setGroundY] = useState(0);
+  const [baseSceneScale, setBaseSceneScale] = useState(5);
+  const [sceneScaleMultiplier, setSceneScaleMultiplier] = useState(1);
+  const sceneScale = baseSceneScale * sceneScaleMultiplier;
+  const [wasdEnabled, setWasdEnabled] = useState(false);
   const [mannequins, setMannequins] = useState<MannequinState[]>([
-    { id: 'm0', color: '#ef4444', position: [-2, 0, 0], rotation: [0, 0, 0], pose: 'stand', scale: 1 },
-    { id: 'm1', color: '#22c55e', position: [2, 0, 0], rotation: [0, Math.PI, 0], pose: 'stand', scale: 1 },
+    { id: 'm0', color: '#ef4444', position: [0, 0, 0], rotation: [0, 0, 0], pose: 'stand', scale: 1 },
   ]);
   const [props, setProps] = useState<PropState[]>([]);
   const [selected, setSelected] = useState<SelectedObject>(null);
@@ -59,10 +69,59 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
     () => graphImageResolver.collectInputImages(id, nodes, edges),
     [id, nodes, edges]
   );
+
+  // Find connected VR360 node (either direction)
+  const vr360SourceNode = useMemo(() => {
+    const connectedIds = edges
+      .filter((e) => e.source === id || e.target === id)
+      .map((e) => (e.source === id ? e.target : e.source));
+    return nodes.filter((n) => connectedIds.includes(n.id)).find(isVr360Node) ?? null;
+  }, [id, nodes, edges]);
+
+  const vr360Data = vr360SourceNode ? (vr360SourceNode.data as Vr360NodeData) : null;
+
+  // Ground is in world space; calibratedGroundY is already sphere-space Y, use directly.
+  const effectiveGroundY =
+    vr360Data?.calibratedGroundY !== undefined
+      ? vr360Data.calibratedGroundY
+      : groundY;
+
+  // Auto-set sceneScale when VR360 ground calibration changes: abs(calibratedGroundY) * 0.5, min 1
+  const prevCalibrationRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    const cal = vr360Data?.calibratedGroundY;
+    if (cal === undefined) return;
+    if (cal === prevCalibrationRef.current) return;
+    prevCalibrationRef.current = cal;
+    const auto = Math.min(100, Math.max(0.5, Math.abs(cal) * 0.5));
+    setBaseSceneScale(auto);
+    setSceneScaleMultiplier(1);
+  }, [vr360Data?.calibratedGroundY]);
+
+  // When ground Y changes, shift all mannequins/props to stay on the ground
+  const prevGroundYRef = useRef(0);
+  useEffect(() => {
+    const delta = effectiveGroundY - prevGroundYRef.current;
+    prevGroundYRef.current = effectiveGroundY;
+    if (delta === 0) return;
+    setMannequins((prev) =>
+      prev.map((m) => ({ ...m, position: [m.position[0], m.position[1] + delta, m.position[2]] as [number, number, number] }))
+    );
+    setProps((prev) =>
+      prev.map((p) => ({ ...p, position: [p.position[0], p.position[1] + delta, p.position[2]] as [number, number, number] }))
+    );
+  }, [effectiveGroundY]);
+
+  // When upstream is VR360, trace through it to get its own upstream panorama
   const panoramaUrl = useMemo(() => {
+    if (vr360SourceNode) {
+      const vr360Images = graphImageResolver.collectInputImages(vr360SourceNode.id, nodes, edges);
+      const src = vr360Images[0] ?? (vr360SourceNode.data as Vr360NodeData).backgroundUrl ?? null;
+      return src ? convertFileSrc(src) : null;
+    }
     const src = incomingImages[0] ?? data.backgroundUrl ?? null;
     return src ? convertFileSrc(src) : null;
-  }, [incomingImages, data.backgroundUrl]);
+  }, [vr360SourceNode, incomingImages, data.backgroundUrl, nodes, edges]);
 
   // ── helpers ────────────────────────────────────────────────────
 
@@ -85,18 +144,17 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
   );
 
   const addMannequin = useCallback(() => {
-    const idx = mannequins.length;
-    const color = MANNEQUIN_COLORS[idx % MANNEQUIN_COLORS.length];
+    const color = MANNEQUIN_COLORS[mannequins.length % MANNEQUIN_COLORS.length];
     const newM: MannequinState = {
       id: `m${Date.now()}`,
       color,
-      position: [(idx % 3) * 2 - 2, 0, Math.floor(idx / 3) * 2],
+      position: [0, effectiveGroundY, 0],
       rotation: [0, 0, 0],
       pose: 'stand',
       scale: 1,
     };
     setMannequins((prev) => [...prev, newM]);
-  }, [mannequins.length]);
+  }, [mannequins.length, effectiveGroundY]);
 
   const removeSelected = useCallback(() => {
     if (!selected) return;
@@ -113,12 +171,12 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
       id: `p${Date.now()}`,
       propId,
       color,
-      position: [Math.random() * 4 - 2, 0, Math.random() * 4 - 2],
+      position: [0, effectiveGroundY, 0],
       rotation: [0, 0, 0],
       scale: 1,
     };
     setProps((prev) => [...prev, newP]);
-  }, []);
+  }, [effectiveGroundY]);
 
   const setPose = useCallback((pose: string) => {
     if (!selected || selected.kind !== 'mannequin') return;
@@ -160,36 +218,12 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
 
     const colorDataUrl = gl.toDataURL('image/jpeg', 0.95);
 
-    // Generate depth map from pixel brightness
-    const ctx2 = document.createElement('canvas');
-    ctx2.width = gl.width;
-    ctx2.height = gl.height;
-    const ctx = ctx2.getContext('2d')!;
-    ctx.drawImage(gl, 0, 0);
-    const imgData = ctx.getImageData(0, 0, ctx2.width, ctx2.height);
-    const { data: px } = imgData;
-    for (let i = 0; i < px.length; i += 4) {
-      const brightness = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114);
-      const g = brightness < 15 ? 0 : Math.min(255, Math.pow(brightness / 255, 0.8) * 255);
-      px[i] = px[i + 1] = px[i + 2] = g;
-      px[i + 3] = 255;
-    }
-    ctx.putImageData(imgData, 0, 0);
-    const depthDataUrl = ctx2.toDataURL('image/jpeg', 0.9);
-
     const pos1 = findNodePosition(id, 480, 300);
     const colorId = addNode(CANVAS_NODE_TYPES.upload, pos1, {
       imageUrl: colorDataUrl,
-      displayName: '3D当前视角',
+      displayName: '3D视角布局图',
     });
     addEdge(id, colorId);
-
-    const pos2 = { x: pos1.x + 500, y: pos1.y };
-    const depthId = addNode(CANVAS_NODE_TYPES.upload, pos2, {
-      imageUrl: depthDataUrl,
-      displayName: '3D深度图',
-    });
-    addEdge(id, depthId);
   }, [id, findNodePosition, addNode, addEdge]);
 
   // ── selected object info ────────────────────────────────────────
@@ -263,6 +297,9 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
           onMannequinTransformEnd={handleMannequinTransformEnd}
           onPropTransformEnd={handlePropTransformEnd}
           panoramaUrl={panoramaUrl}
+          groundY={effectiveGroundY}
+          sceneScale={sceneScale}
+          wasdEnabled={wasdEnabled}
           cameraTarget={cameraTarget}
           canvasRef={canvasRef}
           preserveDrawingBuffer
@@ -271,10 +308,17 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
         {/* top toolbar */}
         <div className="absolute top-4 right-4 flex gap-2">
           <button
+            onClick={() => setWasdEnabled((v) => !v)}
+            className={`px-4 py-2 text-white text-sm font-bold rounded-lg ${wasdEnabled ? 'bg-cyan-600 hover:bg-cyan-700' : 'bg-zinc-700 hover:bg-zinc-600'}`}
+            title="WASD/方向键移动镜头，滚轮推拉"
+          >
+            {wasdEnabled ? '🎮 移动中' : '🎮 移动镜头'}
+          </button>
+          <button
             onClick={exportCurrentView}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg"
           >
-            导出视角 + 深度图
+            导出视角及布局图
           </button>
           <button
             onClick={() => setFullscreen(false)}
@@ -350,7 +394,7 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
         )}
       </div>
 
-      {/* Right panel - camera presets + pose */}
+      {/* Right panel - camera presets + ground adjust */}
       <div className="w-40 bg-zinc-900 border-l border-zinc-700 flex flex-col overflow-hidden">
         <div className="p-3 border-b border-zinc-700 text-xs font-bold text-zinc-300">相机预设</div>
         <div className="flex flex-col gap-1 p-2">
@@ -363,6 +407,46 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
               {preset.name}
             </button>
           ))}
+        </div>
+        <div className="p-3 border-t border-zinc-700">
+          <div className="text-xs font-bold text-zinc-300 mb-2">场景缩放</div>
+          <input
+            type="range"
+            min={0.1}
+            max={4}
+            step={0.05}
+            value={sceneScaleMultiplier}
+            onChange={(e) => setSceneScaleMultiplier(Number(e.target.value))}
+            className="w-full accent-cyan-500"
+          />
+          <div className="flex justify-between text-xs text-zinc-500 mt-1">
+            <span>0.1x</span>
+            <span className="text-zinc-300">{sceneScaleMultiplier.toFixed(2)}x</span>
+            <span>4x</span>
+          </div>
+        </div>
+        <div className="p-3 border-t border-zinc-700">
+          <div className="text-xs font-bold text-zinc-300 mb-2">地表高度</div>
+          <input
+            type="range"
+            min={-30}
+            max={30}
+            step={0.5}
+            value={effectiveGroundY}
+            onChange={(e) => setGroundY(Number(e.target.value))}
+            disabled={vr360Data?.calibratedGroundY !== undefined}
+            className="w-full accent-cyan-500 disabled:opacity-40"
+          />
+          <div className="flex justify-between text-xs text-zinc-500 mt-1">
+            <span>-30</span>
+            <span className="text-zinc-300">{effectiveGroundY.toFixed(1)}</span>
+            <span>+30</span>
+          </div>
+          {vr360Data?.calibratedGroundY !== undefined && (
+            <div className="text-xs text-teal-500/70 mt-1">
+              由 VR360 控制 · 球面Y={vr360Data.calibratedGroundY} · 场景Y={effectiveGroundY.toFixed(2)}
+            </div>
+          )}
         </div>
       </div>
     </div>,
@@ -397,6 +481,12 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
           </div>
         </div>
       </div>
+      {vr360Data && (
+        <div className="mb-2 text-xs text-teal-400/80 flex items-center gap-1">
+          <span>●</span>
+          <span>已从 VR360 同步地面 · 球面Y {vr360Data.calibratedGroundY ?? 0}</span>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2">
         <button

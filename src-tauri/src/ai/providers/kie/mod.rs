@@ -116,7 +116,9 @@ impl KieProvider {
     }
 
     fn max_reference_count_for_model(model: &str) -> usize {
-        if model == "nano-banana-pro" {
+        if Self::is_video_model(model) {
+            5
+        } else if model == "nano-banana-pro" {
             8
         } else {
             14
@@ -366,6 +368,45 @@ impl KieProvider {
             .and_then(|raw| raw.as_bool())
             .unwrap_or(false);
 
+        // seedream/4.5-text-to-image: prompt + aspect_ratio + quality, no images
+        if model == "seedream/4.5-text-to-image" {
+            let quality = if request.size == "4K" { "high" } else { "basic" };
+            return Ok(json!({
+                "prompt": request.prompt,
+                "aspect_ratio": request.aspect_ratio,
+                "quality": quality,
+            }));
+        }
+
+        // seedream/4.5-edit uses image_urls + quality (basic=2K, high=4K); image_urls is required
+        if model == "seedream/4.5-edit" {
+            if uploaded_images.is_empty() {
+                return Err(AIError::InvalidRequest(
+                    "Seedream 4.5 Edit requires at least one reference image".to_string(),
+                ));
+            }
+            let quality = if request.size == "4K" { "high" } else { "basic" };
+            return Ok(json!({
+                "prompt": request.prompt,
+                "aspect_ratio": request.aspect_ratio,
+                "quality": quality,
+                "image_urls": uploaded_images,
+            }));
+        }
+
+        // gpt-image-2-image-to-image uses input_urls; all other image models use image_input
+        if model == "gpt-image-2-image-to-image" {
+            let mut input = json!({
+                "prompt": request.prompt,
+                "aspect_ratio": request.aspect_ratio,
+                "resolution": request.size,
+            });
+            if !uploaded_images.is_empty() {
+                input["input_urls"] = json!(uploaded_images);
+            }
+            return Ok(input);
+        }
+
         let mut input = json!({
             "prompt": request.prompt,
             "aspect_ratio": request.aspect_ratio,
@@ -585,19 +626,19 @@ impl AIProvider for KieProvider {
     }
 
     fn supports_model(&self, model: &str) -> bool {
+        let bare = Self::sanitize_model(model);
         matches!(
-            Self::sanitize_model(model).as_str(),
+            bare.as_str(),
             "nano-banana-2"
                 | "nano-banana-pro"
                 | "gpt-image-2"
-                | "gpt-image-2-text-to-image"
                 | "gpt-image-2-image-to-image"
                 | "wan-2-7-i2v"
                 | "wan-2-7-t2v"
                 | "wan-2-7-r2v"
                 | "seedance-2"
                 | "seedance-2-fast"
-        )
+        ) || bare == "seedream/4.5-edit" || bare == "seedream/4.5-text-to-image"
     }
 
     fn list_models(&self) -> Vec<String> {
@@ -605,8 +646,7 @@ impl AIProvider for KieProvider {
             "kie/nano-banana-2".to_string(),
             "kie/nano-banana-pro".to_string(),
             "kie/gpt-image-2".to_string(),
-            "kie/gpt-image-2-text-to-image".to_string(),
-            "kie/gpt-image-2-image-to-image".to_string(),
+            "kie/seedream/4.5".to_string(),
             "kie/wan-2-7-i2v".to_string(),
             "kie/wan-2-7-t2v".to_string(),
             "kie/wan-2-7-r2v".to_string(),

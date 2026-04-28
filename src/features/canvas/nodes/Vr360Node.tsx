@@ -9,6 +9,33 @@ import { useCanvasStore } from '@/stores/canvasStore';
 import { CANVAS_NODE_TYPES, type Vr360NodeData } from '@/features/canvas/domain/canvasNodes';
 import { graphImageResolver } from '@/features/canvas/application/canvasServices';
 
+// Sphere radius used by PanoramaSphere
+const SPHERE_R = 500;
+
+function GroundHelper({ groundY }: { groundY: number }) {
+  // calibratedGroundY IS already in sphere Y coordinates (−490 … +100)
+  const sphereY = groundY;
+  // Place the ring just inside the sphere surface so it renders in front of the panorama
+  const innerR = SPHERE_R - 4;
+  // Latitude ring radius at this height: Pythagorean from sphere center
+  const ringRadius = Math.sqrt(Math.max(1, innerR * innerR - sphereY * sphereY));
+
+  return (
+    <group>
+      {/* Bright solid ring — traces directly on the panorama at the calibrated height */}
+      <mesh position={[0, sphereY, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[ringRadius, 4, 12, 200]} />
+        <meshBasicMaterial color="#00ff88" side={THREE.DoubleSide} />
+      </mesh>
+      {/* Wide soft glow band around the ring */}
+      <mesh position={[0, sphereY, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[ringRadius, 20, 8, 128]} />
+        <meshBasicMaterial color="#00ff88" transparent opacity={0.18} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+    </group>
+  );
+}
+
 interface PanoramaSphereProps {
   imageSrc: string;
   onReady?: () => void;
@@ -58,12 +85,23 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
   const addNode = useCanvasStore((s) => s.addNode);
   const addEdge = useCanvasStore((s) => s.addEdge);
   const findNodePosition = useCanvasStore((s) => s.findNodePosition);
+  const updateNodeData = useCanvasStore((s) => s.updateNodeData);
 
   const [fullscreen, setFullscreen] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const canvasRef = useRef<HTMLDivElement>(null);
   const orbitRef = useRef<any>(null);
   const [renderKey, setRenderKey] = useState(0);
+
+  // calibration state — mirrors data fields, persisted on save
+  const [calibratedGroundY, setCalibratedGroundY] = useState(data.calibratedGroundY ?? 0);
+  const [showCalibration, setShowCalibration] = useState(false);
+
+  const saveCalibration = useCallback(() => {
+    updateNodeData(id, { calibratedGroundY });
+  }, [id, updateNodeData, calibratedGroundY]);
+
+  const isCalibrated = (data.calibratedGroundY ?? 0) !== 0;
 
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, nodes, edges),
@@ -184,6 +222,7 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
         onPointerDown={(e) => e.stopPropagation()}
       >
         <div className="w-[96%] h-[96%] bg-black rounded-3xl overflow-hidden relative">
+          {/* top-right action buttons */}
           <div className="absolute top-8 right-8 z-50 flex flex-wrap gap-3">
             <button
               onClick={handleExportCurrentView}
@@ -209,12 +248,60 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
               12宫格参考
             </button>
             <button
+              onClick={() => setShowCalibration((v) => !v)}
+              className={`px-8 py-4 text-xl font-bold rounded-3xl transition-all ${
+                showCalibration
+                  ? 'bg-teal-500 text-white'
+                  : 'bg-zinc-700 hover:bg-zinc-600 text-white'
+              }`}
+            >
+              地平线标定
+            </button>
+            <button
               onClick={() => setFullscreen(false)}
               className="px-8 py-4 bg-zinc-700 hover:bg-zinc-600 text-white text-xl font-bold rounded-3xl"
             >
               关闭
             </button>
           </div>
+
+          {/* calibration panel */}
+          {showCalibration && (
+            <div className="absolute right-8 top-36 z-50 bg-zinc-900/95 border border-teal-500/40 rounded-2xl p-5 w-64 flex flex-col gap-4">
+              <div className="text-teal-400 text-sm font-bold">地面校准 → 同步到 3D 导演台</div>
+
+              <div>
+                <div className="flex justify-between text-xs text-zinc-400 mb-1">
+                  <span>地面高度</span>
+                  <span className="text-zinc-200 font-mono">{calibratedGroundY}</span>
+                </div>
+                <input
+                  type="range"
+                  min={-490}
+                  max={100}
+                  step={5}
+                  value={calibratedGroundY}
+                  onChange={(e) => setCalibratedGroundY(Number(e.target.value))}
+                  className="w-full accent-teal-500"
+                />
+                <div className="flex justify-between text-xs text-zinc-600 mt-0.5">
+                  <span>地面偏高</span>
+                  <span>地面偏低</span>
+                </div>
+              </div>
+
+              <button
+                onClick={saveCalibration}
+                className="w-full py-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-bold rounded-xl transition-colors"
+              >
+                保存校准
+              </button>
+              <div className="text-xs text-zinc-500 text-center">
+                绿色光圈 = 地面所在位置<br />调整让光圈贴合场景地面
+              </div>
+            </div>
+          )}
+
           <R3FCanvas
             ref={canvasRef as any}
             camera={{ position: [0, 0, 0.1], fov: 75 }}
@@ -224,6 +311,7 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
             key={`preview-${renderKey}`}
           >
             <PanoramaSphere imageSrc={panoramaUrl} onReady={() => setIsReady(true)} />
+            {showCalibration && <GroundHelper groundY={calibratedGroundY} />}
             <OrbitControls
               ref={orbitRef}
               enablePan={false}
@@ -271,6 +359,7 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
         <button
           onClick={() => {
             if (!panoramaUrl) return;
+            setCalibratedGroundY(data.calibratedGroundY ?? 0);
             setRenderKey((k) => k + 1);
             setIsReady(false);
             setFullscreen(true);
@@ -295,6 +384,12 @@ export function Vr360Node({ id, data }: Vr360NodeProps) {
           12宫格
         </button>
       </div>
+      {isCalibrated && (
+        <div className="mt-2 text-xs text-teal-400/80 flex items-center gap-1">
+          <span>●</span>
+          <span>已标定地面高度 {data.calibratedGroundY}</span>
+        </div>
+      )}
 
       {fullscreenPortal}
     </div>

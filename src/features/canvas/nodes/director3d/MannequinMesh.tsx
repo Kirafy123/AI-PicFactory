@@ -4,93 +4,143 @@ import * as THREE from 'three';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import type { MannequinState } from './catalog';
 
+// ---------------------------------------------------------------------------
+// Capsule helper — Three.js r152+ has CapsuleGeometry built-in.
+// args: [radius, length (cylinder part), capSegments, radialSegments]
+// The capsule's total height = length + 2 * radius, centered at Y=0.
+// ---------------------------------------------------------------------------
+function Capsule({
+  radius,
+  length,
+  position,
+  rotation,
+  mat,
+}: {
+  radius: number;
+  length: number;
+  position: [number, number, number];
+  rotation?: [number, number, number];
+  mat: React.ReactElement;
+}) {
+  return (
+    <mesh position={position} rotation={rotation ?? [0, 0, 0]}>
+      <capsuleGeometry args={[radius, length, 8, 16]} />
+      {mat}
+    </mesh>
+  );
+}
+
 interface MannequinGeometryProps {
   color: string;
-  pose: string;
   selected: boolean;
 }
 
-function MannequinGeometry({ color, pose, selected }: MannequinGeometryProps) {
+// ---------------------------------------------------------------------------
+// Human figure built from capsules — no visible gaps between segments.
+// Total height ≈ 1.80 m, feet at Y = 0.
+// ---------------------------------------------------------------------------
+function MannequinGeometry({ color, selected }: MannequinGeometryProps) {
   const emissive = selected ? '#00ffff' : '#000000';
-  const emissiveIntensity = selected ? 0.3 : 0;
-  const mat = (c = color) => (
-    <meshStandardMaterial color={c} emissive={emissive} emissiveIntensity={emissiveIntensity} />
-  );
-
-  const isLieFlat = pose === 'lieflat';
-  const isLean45 = pose === 'lean45';
-  const isSit = pose === 'sitchair';
-
-  const groupRotation: [number, number, number] = isLieFlat
-    ? [Math.PI / 2, 0, 0]
-    : isLean45
-    ? [0, 0, -Math.PI / 4]
-    : [0, 0, 0];
-
-  const upperLegAngle = isSit ? Math.PI / 2 : 0;
-  const lowerLegAngle = isSit ? -Math.PI / 2 : 0;
+  const ei = selected ? 0.3 : 0;
+  const mat = <meshStandardMaterial color={color} emissive={emissive} emissiveIntensity={ei} roughness={0.6} metalness={0.1} />;
 
   return (
-    <group rotation={groupRotation}>
-      <mesh position={[0, 2.15, 0]}>
-        <sphereGeometry args={[0.35, 16, 16]} />
-        {mat()}
+    <group>
+      {/* ── Head ── */}
+      <mesh position={[0, 1.70, 0]}>
+        <sphereGeometry args={[0.13, 20, 20]} />
+        {mat}
       </mesh>
-      <mesh position={[0.13, 2.22, 0.33]}>
-        <sphereGeometry args={[0.06, 8, 8]} />
-        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+      {/* Direction dot */}
+      <mesh position={[0, 1.70, 0.12]}>
+        <sphereGeometry args={[0.03, 8, 8]} />
+        <meshStandardMaterial color="#ffffff" emissive="#ffffff" emissiveIntensity={1} />
       </mesh>
-      <mesh position={[-0.13, 2.22, 0.33]}>
-        <sphereGeometry args={[0.06, 8, 8]} />
-        <meshStandardMaterial color="white" emissive="white" emissiveIntensity={0.5} />
+
+      {/* ── Neck ── */}
+      <Capsule radius={0.045} length={0.08} position={[0, 1.565, 0]} mat={mat} />
+
+      {/* ── Torso (one capsule, shoulder to hip) ── */}
+      <Capsule radius={0.145} length={0.38} position={[0, 1.22, 0]} mat={mat} />
+
+      {/* ── Pelvis bridge (fills gap between torso and legs) ── */}
+      <mesh position={[0, 0.92, 0]}>
+        <sphereGeometry args={[0.13, 16, 16]} />
+        {mat}
       </mesh>
-      <mesh position={[0, 1.25, 0]}>
-        <capsuleGeometry args={[0.32, 1.2, 8, 16]} />
-        {mat()}
+
+      {/* ── Right arm ── */}
+      {/* upper arm: angled outward ~15° */}
+      <Capsule radius={0.052} length={0.22} position={[0.21, 1.26, 0]} rotation={[0, 0, -0.26]} mat={mat} />
+      {/* elbow sphere */}
+      <mesh position={[0.30, 1.02, 0]}>
+        <sphereGeometry args={[0.052, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[0, 0.45, 0]}>
-        <capsuleGeometry args={[0.28, 0.35, 8, 16]} />
-        {mat()}
+      {/* lower arm */}
+      <Capsule radius={0.042} length={0.20} position={[0.30, 0.84, 0]} mat={mat} />
+      {/* wrist/hand */}
+      <mesh position={[0.30, 0.68, 0]}>
+        <sphereGeometry args={[0.042, 10, 10]} />
+        {mat}
       </mesh>
-      <mesh position={[0.55, 1.5, 0]} rotation={[0, 0, Math.PI / 6]}>
-        <capsuleGeometry args={[0.12, 0.7, 8, 16]} />
-        {mat()}
+
+      {/* ── Left arm ── */}
+      <Capsule radius={0.052} length={0.22} position={[-0.21, 1.26, 0]} rotation={[0, 0, 0.26]} mat={mat} />
+      <mesh position={[-0.30, 1.02, 0]}>
+        <sphereGeometry args={[0.052, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[0.75, 0.95, 0]} rotation={[0, 0, Math.PI / 8]}>
-        <capsuleGeometry args={[0.1, 0.65, 8, 16]} />
-        {mat()}
+      <Capsule radius={0.042} length={0.20} position={[-0.30, 0.84, 0]} mat={mat} />
+      <mesh position={[-0.30, 0.68, 0]}>
+        <sphereGeometry args={[0.042, 10, 10]} />
+        {mat}
       </mesh>
-      <mesh position={[-0.55, 1.5, 0]} rotation={[0, 0, -Math.PI / 6]}>
-        <capsuleGeometry args={[0.12, 0.7, 8, 16]} />
-        {mat()}
+
+      {/* ── Right leg ── */}
+      {/* hip sphere */}
+      <mesh position={[0.10, 0.86, 0]}>
+        <sphereGeometry args={[0.075, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[-0.75, 0.95, 0]} rotation={[0, 0, -Math.PI / 8]}>
-        <capsuleGeometry args={[0.1, 0.65, 8, 16]} />
-        {mat()}
+      {/* thigh */}
+      <Capsule radius={0.072} length={0.28} position={[0.10, 0.64, 0]} mat={mat} />
+      {/* knee */}
+      <mesh position={[0.10, 0.42, 0]}>
+        <sphereGeometry args={[0.068, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[0.22, isSit ? 0.15 : -0.1, isSit ? 0.35 : 0]} rotation={[upperLegAngle, 0, 0]}>
-        <capsuleGeometry args={[0.16, 0.75, 8, 16]} />
-        {mat()}
+      {/* shin */}
+      <Capsule radius={0.058} length={0.26} position={[0.10, 0.22, 0]} mat={mat} />
+      {/* ankle */}
+      <mesh position={[0.10, 0.06, 0]}>
+        <sphereGeometry args={[0.055, 10, 10]} />
+        {mat}
       </mesh>
-      <mesh position={[0.22, isSit ? 0.15 : -0.8, isSit ? 0.9 : 0]} rotation={[lowerLegAngle, 0, 0]}>
-        <capsuleGeometry args={[0.13, 0.75, 8, 16]} />
-        {mat()}
+      {/* foot */}
+      <mesh position={[0.10, 0.04, 0.07]}>
+        <boxGeometry args={[0.09, 0.055, 0.20]} />
+        {mat}
       </mesh>
-      <mesh position={[-0.22, isSit ? 0.15 : -0.1, isSit ? 0.35 : 0]} rotation={[upperLegAngle, 0, 0]}>
-        <capsuleGeometry args={[0.16, 0.75, 8, 16]} />
-        {mat()}
+
+      {/* ── Left leg ── */}
+      <mesh position={[-0.10, 0.86, 0]}>
+        <sphereGeometry args={[0.075, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[-0.22, isSit ? 0.15 : -0.8, isSit ? 0.9 : 0]} rotation={[lowerLegAngle, 0, 0]}>
-        <capsuleGeometry args={[0.13, 0.75, 8, 16]} />
-        {mat()}
+      <Capsule radius={0.072} length={0.28} position={[-0.10, 0.64, 0]} mat={mat} />
+      <mesh position={[-0.10, 0.42, 0]}>
+        <sphereGeometry args={[0.068, 12, 12]} />
+        {mat}
       </mesh>
-      <mesh position={[0.22, isSit ? 0.15 : -1.35, isSit ? 1.2 : 0.1]}>
-        <boxGeometry args={[0.2, 0.12, 0.35]} />
-        {mat()}
+      <Capsule radius={0.058} length={0.26} position={[-0.10, 0.22, 0]} mat={mat} />
+      <mesh position={[-0.10, 0.06, 0]}>
+        <sphereGeometry args={[0.055, 10, 10]} />
+        {mat}
       </mesh>
-      <mesh position={[-0.22, isSit ? 0.15 : -1.35, isSit ? 1.2 : 0.1]}>
-        <boxGeometry args={[0.2, 0.12, 0.35]} />
-        {mat()}
+      <mesh position={[-0.10, 0.04, 0.07]}>
+        <boxGeometry args={[0.09, 0.055, 0.20]} />
+        {mat}
       </mesh>
     </group>
   );
@@ -98,6 +148,7 @@ function MannequinGeometry({ color, pose, selected }: MannequinGeometryProps) {
 
 interface MannequinControllerProps {
   mannequin: MannequinState;
+  sceneScale: number;
   selected: boolean;
   onSelect: () => void;
   onTransformEnd: (position: [number, number, number], rotation: [number, number, number]) => void;
@@ -106,6 +157,7 @@ interface MannequinControllerProps {
 
 export function MannequinController({
   mannequin,
+  sceneScale,
   selected,
   onSelect,
   onTransformEnd,
@@ -120,6 +172,9 @@ export function MannequinController({
     onTransformEnd([p.x, p.y, p.z], [r.x, r.y, r.z]);
   }
 
+  // Combined scale: per-mannequin scale × scene scale
+  const totalScale = mannequin.scale * sceneScale;
+
   return (
     <group>
       {selected && (
@@ -133,19 +188,19 @@ export function MannequinController({
         ref={groupRef}
         position={mannequin.position}
         rotation={mannequin.rotation}
-        scale={mannequin.scale}
+        scale={totalScale}
         onClick={(e) => { e.stopPropagation(); onSelect(); }}
       >
-        <MannequinGeometry color={mannequin.color} pose={mannequin.pose} selected={selected} />
+        <MannequinGeometry color={mannequin.color} selected={selected} />
         {selected && (
           <mesh
-            position={[0, 2.9, 0]}
+            position={[0, 2.05, 0]}
             onClick={(e) => {
               e.stopPropagation();
               setMode((m) => (m === 'translate' ? 'rotate' : 'translate'));
             }}
           >
-            <sphereGeometry args={[0.18, 8, 8]} />
+            <sphereGeometry args={[0.15, 8, 8]} />
             <meshStandardMaterial
               color={mode === 'translate' ? '#00ff88' : '#ff8800'}
               emissive={mode === 'translate' ? '#00ff88' : '#ff8800'}
