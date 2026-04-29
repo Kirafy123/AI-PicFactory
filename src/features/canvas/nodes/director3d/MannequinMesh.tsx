@@ -70,18 +70,15 @@ function MannequinGeometry({ color, selected }: MannequinGeometryProps) {
       </mesh>
 
       {/* ── Right arm ── */}
-      {/* upper arm: angled outward ~15° */}
       <Capsule radius={0.052} length={0.22} position={[0.21, 1.26, 0]} rotation={[0, 0, -0.26]} mat={mat} />
-      {/* elbow sphere */}
       <mesh position={[0.30, 1.02, 0]}>
         <sphereGeometry args={[0.052, 12, 12]} />
         {mat}
       </mesh>
-      {/* lower arm */}
       <Capsule radius={0.042} length={0.20} position={[0.30, 0.84, 0]} mat={mat} />
-      {/* wrist/hand */}
-      <mesh position={[0.30, 0.68, 0]}>
-        <sphereGeometry args={[0.042, 10, 10]} />
+      {/* right hand — single cylinder */}
+      <mesh position={[0.30, 0.63, 0]}>
+        <cylinderGeometry args={[0.038, 0.038, 0.10, 10]} />
         {mat}
       </mesh>
 
@@ -92,54 +89,28 @@ function MannequinGeometry({ color, selected }: MannequinGeometryProps) {
         {mat}
       </mesh>
       <Capsule radius={0.042} length={0.20} position={[-0.30, 0.84, 0]} mat={mat} />
-      <mesh position={[-0.30, 0.68, 0]}>
-        <sphereGeometry args={[0.042, 10, 10]} />
+      {/* left hand — single cylinder */}
+      <mesh position={[-0.30, 0.63, 0]}>
+        <cylinderGeometry args={[0.038, 0.038, 0.10, 10]} />
         {mat}
       </mesh>
 
-      {/* ── Right leg ── */}
-      {/* hip sphere */}
-      <mesh position={[0.10, 0.86, 0]}>
-        <sphereGeometry args={[0.075, 12, 12]} />
-        {mat}
-      </mesh>
-      {/* thigh */}
-      <Capsule radius={0.072} length={0.28} position={[0.10, 0.64, 0]} mat={mat} />
-      {/* knee */}
-      <mesh position={[0.10, 0.42, 0]}>
-        <sphereGeometry args={[0.068, 12, 12]} />
-        {mat}
-      </mesh>
-      {/* shin */}
-      <Capsule radius={0.058} length={0.26} position={[0.10, 0.22, 0]} mat={mat} />
-      {/* ankle */}
-      <mesh position={[0.10, 0.06, 0]}>
-        <sphereGeometry args={[0.055, 10, 10]} />
-        {mat}
-      </mesh>
-      {/* foot */}
-      <mesh position={[0.10, 0.04, 0.07]}>
-        <boxGeometry args={[0.09, 0.055, 0.20]} />
+      {/* ── Legs — single thick cylinder (both legs merged) ── */}
+      {/* spans y=[0.12, 0.92], overlaps pelvis bridge sphere at top */}
+      <mesh position={[0, 0.52, 0]}>
+        <cylinderGeometry args={[0.11, 0.11, 0.80, 16]} />
         {mat}
       </mesh>
 
-      {/* ── Left leg ── */}
-      <mesh position={[-0.10, 0.86, 0]}>
-        <sphereGeometry args={[0.075, 12, 12]} />
+      {/* ── Chess piece base ── */}
+      {/* taper: connects leg cylinder bottom (y≈0.12) down to wide plate */}
+      <mesh position={[0, 0.09, 0]}>
+        <cylinderGeometry args={[0.11, 0.17, 0.07, 20]} />
         {mat}
       </mesh>
-      <Capsule radius={0.072} length={0.28} position={[-0.10, 0.64, 0]} mat={mat} />
-      <mesh position={[-0.10, 0.42, 0]}>
-        <sphereGeometry args={[0.068, 12, 12]} />
-        {mat}
-      </mesh>
-      <Capsule radius={0.058} length={0.26} position={[-0.10, 0.22, 0]} mat={mat} />
-      <mesh position={[-0.10, 0.06, 0]}>
-        <sphereGeometry args={[0.055, 10, 10]} />
-        {mat}
-      </mesh>
-      <mesh position={[-0.10, 0.04, 0.07]}>
-        <boxGeometry args={[0.09, 0.055, 0.20]} />
+      {/* wide base plate: bottom at y=0 (ground level) */}
+      <mesh position={[0, 0.03, 0]}>
+        <cylinderGeometry args={[0.17, 0.22, 0.06, 24]} />
         {mat}
       </mesh>
     </group>

@@ -36,6 +36,7 @@ import {
   DEFAULT_NODE_WIDTH,
 } from '@/features/canvas/domain/canvasNodes';
 import { prepareNodeImage } from '@/features/canvas/application/imageData';
+import { archiveGeneratedImage } from '@/commands/gallery';
 import {
   buildGenerationErrorReport,
   CURRENT_RUNTIME_SESSION_ID,
@@ -529,6 +530,18 @@ export function Canvas() {
                 generationErrorDetails: null,
                 generationDebugContext: undefined,
               });
+
+              // Archive the generated image to Documents/AI-PicFactory/gallery (fire-and-forget)
+              {
+                const debugCtx = currentData.generationDebugContext as Record<string, unknown> | undefined;
+                const model = typeof debugCtx?.requestModel === 'string' ? debugCtx.requestModel : 'unknown';
+                archiveGeneratedImage({
+                  source: prepared.imageUrl,
+                  projectName: getCurrentProject()?.name ?? '未命名',
+                  model,
+                }).catch((err) => console.warn('[Gallery] Archive failed:', err));
+              }
+
               break;
             }
 

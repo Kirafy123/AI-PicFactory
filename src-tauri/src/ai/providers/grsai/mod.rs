@@ -47,6 +47,7 @@ fn decode_file_url_path(value: &str) -> String {
     normalized.to_string()
 }
 
+// Used by /v1/draw/nano-banana — strips data URL prefix to send raw base64.
 fn encode_reference_for_grsai(source: &str) -> Option<String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -78,6 +79,54 @@ fn encode_reference_for_grsai(source: &str) -> Option<String> {
     };
     let bytes = std::fs::read(path).ok()?;
     Some(STANDARD.encode(bytes))
+}
+
+// Used by /v1/draw/completions (gpt-image-2) — keeps full data URL format
+// because the completions endpoint wraps OpenAI's API which expects complete data URLs.
+fn encode_reference_as_data_url(source: &str) -> Option<String> {
+    let trimmed = source.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+        return Some(trimmed.to_string());
+    }
+
+    // Already a full data URL — keep it as-is
+    if trimmed.starts_with("data:") {
+        return Some(trimmed.to_string());
+    }
+
+    // Raw base64 (heuristic) — assume PNG since we can't detect MIME
+    let likely_base64 = trimmed.len() > 256
+        && trimmed
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=');
+    if likely_base64 {
+        return Some(format!("data:image/png;base64,{}", trimmed));
+    }
+
+    // Local file path — read bytes and build a full data URL with detected MIME type
+    let path = if trimmed.starts_with("file://") {
+        PathBuf::from(decode_file_url_path(trimmed))
+    } else {
+        PathBuf::from(trimmed)
+    };
+    let bytes = std::fs::read(&path).ok()?;
+    let mime = path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .and_then(|ext| match ext.as_str() {
+            "jpg" | "jpeg" => Some("image/jpeg"),
+            "png" => Some("image/png"),
+            "webp" => Some("image/webp"),
+            "gif" => Some("image/gif"),
+            _ => None,
+        })
+        .unwrap_or("image/png");
+    Some(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
 }
 
 #[derive(Debug, Serialize)]
@@ -252,6 +301,7 @@ impl GrsaiProvider {
     }
 
     async fn request_completions(&self, request: &GenerateRequest, model: String) -> Result<Value, AIError> {
+        let reference_count = request.reference_images.as_ref().map(|v| v.len()).unwrap_or(0);
         let body = GptImageRequestBody {
             model,
             prompt: request.prompt.clone(),
@@ -263,13 +313,18 @@ impl GrsaiProvider {
                 .map(|images| {
                     images
                         .iter()
-                        .filter_map(|image| encode_reference_for_grsai(image))
+                        .filter_map(|image| encode_reference_as_data_url(image))
                         .collect::<Vec<_>>()
                 })
                 .filter(|images| !images.is_empty()),
             web_hook: "-1".to_string(),
             shut_progress: true,
         };
+        info!(
+            "[GRSAI Completions] reference_images={}, encoded_urls={}",
+            reference_count,
+            body.urls.as_ref().map(|v| v.len()).unwrap_or(0)
+        );
 
         if request
             .reference_images
@@ -357,6 +412,12 @@ impl GrsaiProvider {
                     .filter(|value| !value.is_empty())
                     .or_else(|| payload.get("failure_reason").and_then(|raw| raw.as_str()))
                     .unwrap_or("unknown failure");
+                // Log the full payload to help diagnose API-side failures
+                tracing::warn!(
+                    "[GRSAI] Task failed: reason={:?}, full_payload={}",
+                    reason,
+                    payload
+                );
                 Ok(ProviderTaskPollResult::Failed(reason.to_string()))
             }
             Some(other) => Err(AIError::Provider(format!("GRSAI unexpected task status: {}", other))),

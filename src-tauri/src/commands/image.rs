@@ -1629,3 +1629,94 @@ pub async fn load_image(file_path: String) -> Result<String, String> {
 
     Ok(format!("data:{};base64,{}", mime, base64_data))
 }
+
+// ── Gallery archive ─────────────────────────────────────────────────────────
+
+fn sanitize_folder_name(raw: &str) -> String {
+    // Keep Unicode (Chinese etc.) but strip characters illegal in Windows/macOS folder names
+    let cleaned: String = raw
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0'..='\x1f'))
+        .collect();
+    let trimmed = cleaned.trim().to_string();
+    if trimmed.is_empty() {
+        "未命名".to_string()
+    } else {
+        trimmed.chars().take(50).collect()
+    }
+}
+
+/// Archive a generated image into Documents/AI-PicFactory/gallery/{date}/{project}/{stem}.{ext}.
+/// `source` must be a local file path (output of persistImageLocally / prepareNodeImage).
+/// `date_str` and `time_stem` are formatted by the frontend (JS Date).
+#[tauri::command]
+pub async fn archive_generated_image(
+    source: String,
+    project_name: String,
+    date_str: String,
+    time_stem: String,
+) -> Result<String, String> {
+    let source = source.trim().to_string();
+    if source.is_empty() {
+        return Err("source is empty".to_string());
+    }
+
+    let source_path = PathBuf::from(&source);
+    if !source_path.exists() {
+        return Err(format!("Source file not found: {}", source_path.display()));
+    }
+
+    // Resolve gallery base: <install_dir>/gallery/{date}/{project}
+    // current_exe() → e.g. C:\Users\...\AppData\Local\Programs\AI-PicFactory\AI-PicFactory.exe
+    // parent()       → C:\Users\...\AppData\Local\Programs\AI-PicFactory\
+    let exe_path = std::env::current_exe()
+        .map_err(|e| format!("Failed to resolve exe path: {}", e))?;
+    let install_dir = exe_path
+        .parent()
+        .ok_or_else(|| "Failed to resolve install dir".to_string())?;
+
+    let project_folder = sanitize_folder_name(&project_name);
+
+    // Sanitize date_str and time_stem to only filesystem-safe ASCII/unicode chars
+    let safe_date: String = date_str
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .take(10)
+        .collect();
+    let safe_date = if safe_date.is_empty() { "0000-00-00".to_string() } else { safe_date };
+
+    let safe_stem: String = time_stem
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+        .take(80)
+        .collect();
+    let safe_stem = if safe_stem.is_empty() { "image".to_string() } else { safe_stem };
+
+    let extension = source_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_else(|| "jpg".to_string());
+
+    let gallery_dir = install_dir
+        .join("gallery")
+        .join(&safe_date)
+        .join(&project_folder);
+
+    std::fs::create_dir_all(&gallery_dir)
+        .map_err(|e| format!("Failed to create gallery dir: {}", e))?;
+
+    let filename = format!("{}.{}", safe_stem, extension);
+    let dest = ensure_unique_path(gallery_dir.join(&filename));
+
+    std::fs::copy(&source_path, &dest)
+        .map_err(|e| format!("Failed to archive image: {}", e))?;
+
+    info!(
+        "[Gallery] archived {} → {}",
+        source_path.display(),
+        dest.display()
+    );
+
+    Ok(dest.to_string_lossy().to_string())
+}

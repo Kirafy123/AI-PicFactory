@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { Canvas } from './features/canvas/Canvas';
 import { TitleBar } from './components/TitleBar';
 import { SettingsDialog } from './components/SettingsDialog';
 import { UpdateAvailableDialog, type UpdateIgnoreMode } from './components/UpdateAvailableDialog';
 import { GlobalErrorDialog } from './components/GlobalErrorDialog';
 import { ProjectManager } from './features/project/ProjectManager';
+import { UiButton, UiModal } from '@/components/ui';
 import { useThemeStore } from './stores/themeStore';
 import { useProjectStore } from './stores/projectStore';
 import { useSettingsStore } from './stores/settingsStore';
@@ -49,6 +51,7 @@ function App() {
   const [latestVersion, setLatestVersion] = useState<string>('');
   const [currentVersion, setCurrentVersion] = useState<string>('');
   const [globalError, setGlobalError] = useState<GlobalErrorDialogDetail | null>(null);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
 
   const isHydrated = useProjectStore((state) => state.isHydrated);
   const hydrate = useProjectStore((state) => state.hydrate);
@@ -101,6 +104,19 @@ function App() {
       setShowSettings(true);
     });
     return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    getCurrentWindow()
+      .onCloseRequested((event) => {
+        event.preventDefault();
+        setShowExitConfirm(true);
+      })
+      .then((fn) => { unlisten = fn; })
+      .catch(console.error);
+    return () => { unlisten?.(); };
   }, []);
 
   useEffect(() => {
@@ -243,6 +259,26 @@ function App() {
           copyText={globalError?.copyText}
           onClose={() => setGlobalError(null)}
         />
+        <UiModal
+          isOpen={showExitConfirm}
+          onClose={() => setShowExitConfirm(false)}
+          title="退出确认"
+          footer={(
+            <>
+              <UiButton variant="muted" onClick={() => setShowExitConfirm(false)}>
+                取消
+              </UiButton>
+              <UiButton
+                variant="primary"
+                onClick={() => { void invoke('exit_app'); }}
+              >
+                退出
+              </UiButton>
+            </>
+          )}
+        >
+          <p className="text-sm text-text-muted">确定要退出 AI-PicFactory 吗？</p>
+        </UiModal>
       </div>
     </ReactFlowProvider>
   );

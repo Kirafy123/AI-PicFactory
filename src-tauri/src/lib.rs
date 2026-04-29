@@ -82,6 +82,12 @@ fn frontend_ready(app: tauri::AppHandle) {
     show_main_window(&app);
 }
 
+#[tauri::command]
+fn exit_app(app: tauri::AppHandle) {
+    info!("exit_app called, exiting");
+    app.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     setup_logging();
@@ -169,6 +175,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             frontend_ready,
+            exit_app,
             image::split_image,
             image::split_image_source,
             image::prepare_node_image_source,
@@ -180,6 +187,7 @@ pub fn run() {
             image::load_image,
             image::persist_image_source,
             image::persist_image_binary,
+            image::archive_generated_image,
             image::save_image_source_to_downloads,
             image::save_image_source_to_path,
             image::save_image_source_to_directory,

@@ -3,8 +3,17 @@ import { useTranslation } from 'react-i18next';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { UiButton, UiModal, UiSelect } from '@/components/ui';
 
-const QUARK_DOWNLOAD_URL = 'https://pan.quark.cn/s/5b6733a8fc8e';
-const GITHUB_RELEASES_URL = 'https://github.com/Kirafy123/AI-PicFactory/releases';
+const GITHUB_OWNER_REPO = 'Kirafy123/AI-PicFactory';
+
+function buildDirectDownloadUrl(version: string): string {
+  const tag = `v${version}`;
+  const isWindows = navigator.userAgent.includes('Windows');
+  const filename = isWindows
+    ? `AI-PicFactory_${version}_x64-setup.exe`
+    : `AI-PicFactory_${version}_universal.dmg`;
+  return `https://github.com/${GITHUB_OWNER_REPO}/releases/download/${tag}/${filename}`;
+}
+
 export type UpdateIgnoreMode = 'today-version' | 'forever-version' | 'forever-all';
 
 interface UpdateAvailableDialogProps {
@@ -34,13 +43,12 @@ export function UpdateAvailableDialog({
     [t]
   );
 
-  const handleOpenQuark = useCallback(() => {
-    void openUrl(QUARK_DOWNLOAD_URL);
-  }, []);
-
-  const handleOpenGithub = useCallback(() => {
-    void openUrl(GITHUB_RELEASES_URL);
-  }, []);
+  const handleDownload = useCallback(() => {
+    const url = latestVersion
+      ? buildDirectDownloadUrl(latestVersion)
+      : `https://github.com/${GITHUB_OWNER_REPO}/releases/latest`;
+    void openUrl(url);
+  }, [latestVersion]);
 
   const handleApplyIgnore = useCallback(() => {
     onApplyIgnore?.(ignoreMode);
@@ -57,10 +65,7 @@ export function UpdateAvailableDialog({
           <UiButton variant="muted" onClick={onClose}>
             {t('common.cancel')}
           </UiButton>
-          <UiButton variant="muted" onClick={handleOpenQuark}>
-            {t('update.goToQuarkDownload')}
-          </UiButton>
-          <UiButton variant="primary" onClick={handleOpenGithub}>
+          <UiButton variant="primary" onClick={handleDownload}>
             {t('update.goToGithubDownload')}
           </UiButton>
           <UiButton variant="ghost" onClick={handleApplyIgnore}>

@@ -64,6 +64,9 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
   const [propCategory, setPropCategory] = useState('几何模型');
   const [cameraTarget, setCameraTarget] = useState<[number, number, number] | undefined>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [hideGround, setHideGround] = useState(false);
+  const [hidePanorama, setHidePanorama] = useState(false);
+  const [showExportPrompt, setShowExportPrompt] = useState(false);
 
   const incomingImages = useMemo(
     () => graphImageResolver.collectInputImages(id, nodes, edges),
@@ -212,11 +215,20 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
 
   // ── export ─────────────────────────────────────────────────────
 
-  const exportCurrentView = useCallback(async () => {
+  const exportCurrentView = useCallback(async (withBackground: boolean) => {
     const gl = canvasRef.current;
     if (!gl) return;
 
+    setHideGround(true);
+    if (!withBackground) setHidePanorama(true);
+
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+    });
+
     const colorDataUrl = gl.toDataURL('image/jpeg', 0.95);
+    setHideGround(false);
+    setHidePanorama(false);
 
     const pos1 = findNodePosition(id, 480, 300);
     const colorId = addNode(CANVAS_NODE_TYPES.upload, pos1, {
@@ -303,6 +315,8 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
           cameraTarget={cameraTarget}
           canvasRef={canvasRef}
           preserveDrawingBuffer
+          hideGround={hideGround}
+          hidePanorama={hidePanorama}
         />
 
         {/* top toolbar */}
@@ -315,7 +329,7 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
             {wasdEnabled ? '🎮 移动中' : '🎮 移动镜头'}
           </button>
           <button
-            onClick={exportCurrentView}
+            onClick={() => setShowExportPrompt(true)}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-lg"
           >
             导出视角及布局图
@@ -390,6 +404,29 @@ export function Director3dNode({ id, data }: Director3dNodeProps) {
             >
               删除
             </button>
+          </div>
+        )}
+        {/* Export confirmation overlay */}
+        {showExportPrompt && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
+            <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-6 flex flex-col gap-4 w-72 shadow-2xl">
+              <div className="text-sm font-bold text-zinc-200">导出选项</div>
+              <div className="text-xs text-zinc-400 leading-5">是否保留场景图作为导出背景？</div>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => { setShowExportPrompt(false); void exportCurrentView(false); }}
+                  className="px-4 py-2 text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-200 rounded-lg transition-colors"
+                >
+                  不保留
+                </button>
+                <button
+                  onClick={() => { setShowExportPrompt(false); void exportCurrentView(true); }}
+                  className="px-4 py-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
+                >
+                  保留背景
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

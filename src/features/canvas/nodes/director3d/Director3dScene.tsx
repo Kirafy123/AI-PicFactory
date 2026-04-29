@@ -123,12 +123,14 @@ interface SceneContentProps {
   sceneScale: number;
   wasdEnabled: boolean;
   orbitRef: React.RefObject<OrbitControlsImpl>;
+  hideGround?: boolean;
+  hidePanorama?: boolean;
 }
 
 function SceneContent({
   mannequins, props, selected, onSelect,
   onMannequinTransformEnd, onPropTransformEnd,
-  panoramaUrl, groundY, sceneScale, wasdEnabled, orbitRef,
+  panoramaUrl, groundY, sceneScale, wasdEnabled, orbitRef, hideGround, hidePanorama,
 }: SceneContentProps) {
   return (
     <>
@@ -137,8 +139,8 @@ function SceneContent({
       <pointLight position={[0, 5, 0]} intensity={0.5} />
       <CameraSync groundY={groundY} panoramaMode={!!panoramaUrl} />
       <WASDControls enabled={wasdEnabled} orbitRef={orbitRef} />
-      {panoramaUrl && <PanoramaBackground url={panoramaUrl} />}
-      <Ground y={groundY} sceneScale={sceneScale} />
+      {panoramaUrl && !hidePanorama && <PanoramaBackground url={panoramaUrl} />}
+      {!hideGround && <Ground y={groundY} sceneScale={sceneScale} />}
       {mannequins.map((m) => (
         <MannequinController
           key={m.id}
@@ -180,13 +182,15 @@ interface Director3dSceneProps {
   cameraTarget?: [number, number, number];
   canvasRef?: React.RefObject<HTMLCanvasElement>;
   preserveDrawingBuffer?: boolean;
+  hideGround?: boolean;
+  hidePanorama?: boolean;
 }
 
 export function Director3dScene({
   mannequins, props, selected, onSelect,
   onMannequinTransformEnd, onPropTransformEnd,
   panoramaUrl, groundY, sceneScale, wasdEnabled,
-  cameraTarget, canvasRef, preserveDrawingBuffer = false,
+  cameraTarget, canvasRef, preserveDrawingBuffer = false, hideGround, hidePanorama,
 }: Director3dSceneProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null);
 
@@ -219,6 +223,8 @@ export function Director3dScene({
         sceneScale={sceneScale}
         wasdEnabled={wasdEnabled}
         orbitRef={orbitRef}
+        hideGround={hideGround}
+        hidePanorama={hidePanorama}
       />
       <OrbitControls
         ref={orbitRef}
