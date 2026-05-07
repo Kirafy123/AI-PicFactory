@@ -1084,14 +1084,19 @@ fn normalize_extension(raw_ext: &str) -> String {
 
 fn extension_from_mime(mime: &str) -> String {
     let normalized = mime.trim().to_ascii_lowercase();
-    match normalized.as_str() {
+    let base = normalized.split(';').next().unwrap_or(&normalized).trim();
+    match base {
         "image/png" => "png".to_string(),
-        "image/jpeg" => "jpg".to_string(),
-        "image/jpg" => "jpg".to_string(),
+        "image/jpeg" | "image/jpg" => "jpg".to_string(),
         "image/webp" => "webp".to_string(),
         "image/gif" => "gif".to_string(),
         "image/bmp" => "bmp".to_string(),
         "image/avif" => "avif".to_string(),
+        "video/mp4" => "mp4".to_string(),
+        "video/webm" => "webm".to_string(),
+        "video/quicktime" => "mov".to_string(),
+        "video/x-msvideo" => "avi".to_string(),
+        "video/x-matroska" => "mkv".to_string(),
         _ => "png".to_string(),
     }
 }

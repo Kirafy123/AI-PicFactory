@@ -8,17 +8,25 @@ import { imageUrlToDataUrl, persistImageLocally } from '@/features/canvas/applic
 
 import type { AiGateway, GenerateImagePayload } from '../application/ports';
 
+function isVideoUrl(url: string): boolean {
+  const lower = url.toLowerCase().split('?')[0];
+  return ['.mp4', '.webm', '.mov', '.avi', '.mkv'].some((ext) => lower.endsWith(ext));
+}
+
 async function normalizeReferenceImages(payload: GenerateImagePayload): Promise<string[] | undefined> {
+  if (!payload.referenceImages) return undefined;
   const isKieModel = payload.model.startsWith('kie/');
-  return payload.referenceImages
-    ? await Promise.all(
-      payload.referenceImages.map(async (imageUrl) =>
-        isKieModel
-          ? await imageUrlToDataUrl(imageUrl)
-          : await persistImageLocally(imageUrl)
-      )
-    )
-    : undefined;
+  const results = await Promise.all(
+    payload.referenceImages.map(async (imageUrl): Promise<string | null> => {
+      if (isVideoUrl(imageUrl)) {
+        if (isKieModel) return null; // KIE does not support video references
+        return persistImageLocally(imageUrl);
+      }
+      return isKieModel ? imageUrlToDataUrl(imageUrl) : persistImageLocally(imageUrl);
+    })
+  );
+  const filtered = results.filter((url): url is string => url !== null);
+  return filtered.length > 0 ? filtered : undefined;
 }
 
 async function normalizeVideoFirstFrame(payload: GenerateImagePayload): Promise<Record<string, unknown> | undefined> {

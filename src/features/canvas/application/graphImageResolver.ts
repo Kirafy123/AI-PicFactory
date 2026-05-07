@@ -26,7 +26,14 @@ export class DefaultGraphImageResolver implements GraphImageResolver {
       return [];
     }
 
-    if (isUploadNode(node) || isImageEditNode(node) || isExportImageNode(node)) {
+    if (isUploadNode(node)) {
+      const mediaType = node.data.mediaType ?? 'image';
+      if (mediaType === 'video') return node.data.videoUrl ? [node.data.videoUrl] : [];
+      if (mediaType === 'audio') return [];
+      return node.data.imageUrl ? [node.data.imageUrl] : [];
+    }
+
+    if (isImageEditNode(node) || isExportImageNode(node)) {
       return node.data.imageUrl ? [node.data.imageUrl] : [];
     }
 

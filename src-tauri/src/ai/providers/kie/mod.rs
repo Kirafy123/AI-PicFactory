@@ -488,7 +488,7 @@ impl KieProvider {
                 let mut input = json!({
                     "prompt": request.prompt,
                     "resolution": video_resolution,
-                    "ratio": request.aspect_ratio,
+                    "aspect_ratio": request.aspect_ratio,
                     "duration": video_duration,
                     "prompt_extend": prompt_extend,
                     "watermark": false

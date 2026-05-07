@@ -1,17 +1,17 @@
 import type { VideoModelDefinition } from '../../types';
 
-export const KIE_WAN_27_R2V_MODEL_ID = 'kie/wan-2-7-r2v';
+export const DASHSCOPE_WAN27_R2V_MODEL_ID = 'dashscope/wan2.7-r2v';
 
 export const videoModel: VideoModelDefinition = {
-  id: KIE_WAN_27_R2V_MODEL_ID,
+  id: DASHSCOPE_WAN27_R2V_MODEL_ID,
   mediaType: 'video',
-  displayName: 'Wan 2.7 R2V (KIE)',
-  providerId: 'kie',
-  description: 'KIE · Wan 2.7 参考生视频，支持多张参考图保持风格一致',
-  eta: '3-5min',
+  displayName: 'Wan 2.7 R2V (万相视频)',
+  providerId: 'dashscope',
+  description: '万相视频 · Wan2.7 参考生视频，支持多模态参考素材（图像/视频）生成单/多角色视频',
+  eta: '1-5min',
   expectedDurationMs: 240000,
   defaultAspectRatio: '16:9',
-  defaultResolution: '720p',
+  defaultResolution: '1080P',
   durationRange: { min: 2, max: 15, step: 1, default: 5 },
   aspectRatios: [
     { value: '16:9', label: '16:9' },
@@ -21,8 +21,8 @@ export const videoModel: VideoModelDefinition = {
     { value: '3:4', label: '3:4' },
   ],
   resolutions: [
-    { value: '720p', label: '720p' },
-    { value: '1080p', label: '1080p' },
+    { value: '720P', label: '720P' },
+    { value: '1080P', label: '1080P' },
   ],
   extraParamsSchema: [
     {
@@ -32,10 +32,17 @@ export const videoModel: VideoModelDefinition = {
       type: 'boolean',
       defaultValue: true,
     },
+    {
+      key: 'watermark',
+      label: 'Watermark',
+      labelKey: 'videoParams.watermark',
+      type: 'boolean',
+      defaultValue: false,
+    },
   ],
   supportsFirstFrame: false,
   resolveRequest: ({ referenceImageCount }) => ({
-    requestModel: referenceImageCount > 0 ? KIE_WAN_27_R2V_MODEL_ID : 'kie/wan-2-7-t2v',
+    requestModel: 'wan2.7-r2v',
     modeLabel: referenceImageCount > 0 ? '参考生视频' : '文生视频',
   }),
 };

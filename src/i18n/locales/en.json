@@ -87,6 +87,7 @@
   "node": {
     "menu": {
       "uploadImage": "Upload Image",
+      "uploadFile": "Upload File",
       "aiImageGeneration": "AI Image",
       "storyboard": "Storyboard Node",
       "storyboardGen": "Storyboard Generation",
@@ -145,7 +146,8 @@
     },
     "upload": {
       "uploadedAlt": "Uploaded image",
-      "hint": "Click or drag to upload image"
+      "hint": "Click or drag to upload image, video or audio",
+      "captureFrame": "Capture Frame"
     },
     "storyboardNode": {
       "title": "Storyboard Node",

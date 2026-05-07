@@ -87,6 +87,7 @@
   "node": {
     "menu": {
       "uploadImage": "上传图片",
+      "uploadFile": "上传文件",
       "aiImageGeneration": "AI 图片",
       "storyboard": "分镜节点",
       "storyboardGen": "分镜生成",
@@ -145,7 +146,8 @@
     },
     "upload": {
       "uploadedAlt": "已上传图片",
-      "hint": "点击或拖拽上传图片"
+      "hint": "点击或拖拽上传图片/视频/音频",
+      "captureFrame": "截帧"
     },
     "storyboardNode": {
       "title": "分镜节点",

@@ -71,7 +71,17 @@ impl DashScopeProvider {
     }
 
     fn is_video_model(model: &str) -> bool {
-        matches!(model, "wan2.7-t2v" | "wan2.7-i2v")
+        matches!(model, "wan2.7-t2v" | "wan2.7-i2v" | "wan2.7-r2v" | "happyhorse-1.0-r2v")
+    }
+
+    fn is_video_url(url: &str) -> bool {
+        let lower = url.to_lowercase();
+        let path = lower.split('?').next().unwrap_or(&lower);
+        path.ends_with(".mp4")
+            || path.ends_with(".webm")
+            || path.ends_with(".mov")
+            || path.ends_with(".avi")
+            || path.ends_with(".mkv")
     }
 
     fn build_video_input(
@@ -120,21 +130,23 @@ impl DashScopeProvider {
             .unwrap_or("")
             .to_string();
 
+        let ref_image_count = request.reference_images.as_ref().map(|v| v.len()).unwrap_or(0);
         info!(
-            "[DashScope build_video_input] model={}, duration={}, resolution={}, ratio={}, first_frame={}, last_frame={}",
+            "[DashScope build_video_input] model={}, duration={}, resolution={}, ratio={}, first_frame={}, last_frame={}, ref_images={}",
             model,
             video_duration,
             video_resolution,
             ratio,
             if first_frame_url.is_empty() { "none" } else { "set" },
-            if last_frame_url.is_empty() { "none" } else { "set" }
+            if last_frame_url.is_empty() { "none" } else { "set" },
+            ref_image_count,
         );
 
         let mut input = json!({
             "prompt": request.prompt,
         });
 
-        // Build media array for I2V model
+        // Build media array for I2V model (first/last frame)
         if model == "wan2.7-i2v" {
             let mut media = Vec::new();
 
@@ -157,21 +169,42 @@ impl DashScopeProvider {
             }
         }
 
-        let parameters = json!({
-            "resolution": video_resolution,
-            "duration": video_duration,
-            "prompt_extend": prompt_extend,
-            "watermark": watermark,
-        });
+        // Build media array for R2V models (wan2.7-r2v and happyhorse-1.0-r2v)
+        if model == "wan2.7-r2v" || model == "happyhorse-1.0-r2v" {
+            if let Some(ref ref_images) = request.reference_images {
+                if !ref_images.is_empty() {
+                    let media: Vec<serde_json::Value> = ref_images
+                        .iter()
+                        .map(|url| {
+                            let media_type = if Self::is_video_url(url) {
+                                "reference_video"
+                            } else {
+                                "reference_image"
+                            };
+                            json!({ "type": media_type, "url": url })
+                        })
+                        .collect();
+                    input["media"] = json!(media);
+                }
+            }
+        }
 
-        // Add ratio for T2V model
-        let parameters = if model == "wan2.7-t2v" {
-            let mut params = parameters.as_object().unwrap().clone();
+        let mut params = serde_json::Map::new();
+        params.insert("resolution".to_string(), json!(video_resolution));
+        params.insert("duration".to_string(), json!(video_duration));
+        params.insert("watermark".to_string(), json!(watermark));
+
+        // T2V, wan2.7-r2v and HappyHorse R2V require ratio; I2V does not
+        if model != "wan2.7-i2v" {
             params.insert("ratio".to_string(), json!(ratio));
-            json!(params)
-        } else {
-            parameters
-        };
+        }
+
+        // prompt_extend is supported by wan2.7 models only
+        if model == "wan2.7-t2v" || model == "wan2.7-i2v" || model == "wan2.7-r2v" {
+            params.insert("prompt_extend".to_string(), json!(prompt_extend));
+        }
+
+        let parameters = json!(params);
 
         json!({
             "model": model,
@@ -325,7 +358,7 @@ impl AIProvider for DashScopeProvider {
     fn supports_model(&self, model: &str) -> bool {
         matches!(
             Self::sanitize_model(model).as_str(),
-            "wan2.7-t2v" | "wan2.7-i2v"
+            "wan2.7-t2v" | "wan2.7-i2v" | "wan2.7-r2v" | "happyhorse-1.0-r2v"
         )
     }
 
@@ -333,6 +366,8 @@ impl AIProvider for DashScopeProvider {
         vec![
             "dashscope/wan2.7-t2v".to_string(),
             "dashscope/wan2.7-i2v".to_string(),
+            "dashscope/wan2.7-r2v".to_string(),
+            "dashscope/happyhorse-1.0-r2v".to_string(),
         ]
     }
 

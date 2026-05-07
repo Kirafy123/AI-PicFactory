@@ -51,6 +51,9 @@ export interface NodeImageData extends NodeDisplayData {
 
 export interface UploadImageNodeData extends NodeImageData {
   sourceFileName?: string | null;
+  mediaType?: 'image' | 'video' | 'audio';
+  videoUrl?: string | null;
+  audioUrl?: string | null;
 }
 
 export type ExportImageNodeResultKind =

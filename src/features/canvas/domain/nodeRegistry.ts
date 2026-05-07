@@ -48,7 +48,7 @@ export interface CanvasNodeDefinition<TData extends CanvasNodeData = CanvasNodeD
 
 const uploadNodeDefinition: CanvasNodeDefinition<UploadImageNodeData> = {
   type: CANVAS_NODE_TYPES.upload,
-  menuLabelKey: 'node.menu.uploadImage',
+  menuLabelKey: 'node.menu.uploadFile',
   menuIcon: 'upload',
   visibleInMenu: true,
   capabilities: {
@@ -70,6 +70,9 @@ const uploadNodeDefinition: CanvasNodeDefinition<UploadImageNodeData> = {
     aspectRatio: '1:1',
     isSizeManuallyAdjusted: false,
     sourceFileName: null,
+    mediaType: 'image' as const,
+    videoUrl: null,
+    audioUrl: null,
   }),
 };
 
@@ -324,7 +327,7 @@ const exportVideoNodeDefinition: CanvasNodeDefinition<ExportVideoNodeData> = {
   visibleInMenu: false,
   capabilities: { toolbar: true, promptInput: false },
   connectivity: {
-    sourceHandle: false,
+    sourceHandle: true,
     targetHandle: true,
     connectMenu: { fromSource: false, fromTarget: false },
   },
