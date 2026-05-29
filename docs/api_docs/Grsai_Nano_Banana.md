@@ -46,7 +46,7 @@ Nano Banana绘画核心接口。
 
 | 参数 | 类型 | 必填 | 示例 | 描述 |
 | :--- | :--- | :--- | :--- | :--- |
-| **model** | `string` | 是 | `"nano-banana-fast"` | **支持的模型**: `nano-banana-2`,`nano-banana-fast`, `nano-banana`, `nano-banana-pro`, `nano-banana-pro-vt`, `nano-banana-pro-cl`, `nano-banana-pro-vip`, `nano-banana-pro-4k-vip` |
+| **model** | `string` | 是 | `"nano-banana-pro"` | **支持的模型**: `nano-banana-2`, `nano-banana-pro`, `nano-banana-pro-vt`, `nano-banana-pro-cl`, `nano-banana-pro-vip`, `nano-banana-pro-4k-vip` |
 | **urls** | `array` | 否 | `["https://example.com/example.png"]` | 参考图URL或Base64 |
 | **prompt** | `string` | 是 | `"一只可爱的猫咪在草地上玩耍"` | 提示词 |
 | **aspectRatio** | `string` | 否 | `"auto"` | **支持的图像比例**: `auto`, `1:1`, `16:9`, `9:16`, `4:3`, `3:4`, `3:2`, `2:3`, `5:4`, `4:5`, `21:9` (默认： `auto`) |
@@ -145,5 +145,84 @@ Nano Banana绘画核心接口。
 | 参数 | 类型 | 示例 | 描述 |
 | :--- | :--- | :--- | :--- |
 | **code** | `number` | `0` | 状态码：`0`成功， `-22`任务不存在 |
-| **msg** | `string` | `"success"` | 状态信息 |
-| **data** | `object` | - | 绘画结果，数据格式与上方“响应参数”的`data`对象一致 |
+| **msg** | `string` | `”success”` | 状态信息 |
+| **data** | `object` | - | 绘画结果，数据格式与上方”响应参数”的`data`对象一致 |
+
+---
+
+## GPT-Image-2 生成接口
+
+### `POST /v1/api/generate`
+
+gpt-image-2 / gpt-image-2-vip 图片生成接口。
+
+- **请求方式**: POST
+- **响应方式**: 根据 `replyType` 参数决定（`json` / `stream` / `async`）
+
+### 请求头 (Headers)
+```json
+{
+  “Content-Type”: “application/json”,
+  “Authorization”: “Bearer apikey”
+}
+```
+
+### 请求参数 (JSON)
+```json
+{
+  “model”: “gpt-image-2”,
+  “prompt”: “生成一张边牧与古牧正在抖音直播间直播带货截图”,
+  “images”: [],
+  “aspectRatio”: “1024x1024”,
+  “replyType”: “async”
+}
+```
+
+### 参数说明
+
+| 参数 | 类型 | 必填 | 示例 | 描述 |
+| :--- | :--- | :--- | :--- | :--- |
+| **model** | `string` | 是 | `”gpt-image-2”` | **支持的模型**: `gpt-image-2`, `gpt-image-2-vip` |
+| **prompt** | `string` | 是 | `”一只可爱的猫咪”` | 提示词 |
+| **images** | `array` | 否 | `[“https://example.com/ref.png”]` | 参考图，支持 base64 或 URL |
+| **aspectRatio** | `string` | 是 | `”1024x1024”` | 分辨率。`gpt-image-2` 支持比例（如 `”16:9”`）或 1K 像素值；`gpt-image-2-vip` 支持 1-4K 像素值（如 `”2048x2048”`），不支持比例。VIP 自定义约束：最大边 ≤ 3840px，两边均为 16 的倍数，长边:短边 ≤ 3:1，总像素 655,360 ~ 8,294,400 |
+| **replyType** | `string` | 否 | `”async”` | `json`（同步返回）、`stream`（流式）、`async`（异步轮询，默认走 `/v1/draw/result` 接口查结果） |
+
+### 异步响应示例 (replyType = “async”)
+```json
+{
+  “id”: “14-5f3cf761-a4bb-486a-8016-77f490998f80”,
+  “status”: “running”,
+  “progress”: 0
+}
+```
+
+### 结果响应示例（轮询或直接返回）
+```json
+{
+  “id”: “14-5f3cf761-a4bb-486a-8016-77f490998f80”,
+  “status”: “succeeded”,
+  “results”: [
+    { “url”: “https://file1.aitohumanize.com/file/example.png” }
+  ],
+  “progress”: 100
+}
+```
+
+### 失败响应示例
+```json
+{
+  “id”: “12-1f771fbf-f23a-4b89-a7d0-a98ba9862edb”,
+  “status”: “failed”,
+  “error”: “generate failed”
+}
+```
+
+### 状态说明
+
+| status | 描述 |
+| :--- | :--- |
+| `running` | 进行中 |
+| `violation` | 违规 |
+| `succeeded` | 生成成功 |
+| `failed` | 任务失败 |

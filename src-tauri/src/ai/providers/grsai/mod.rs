@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
-use tracing::info;
+use tracing::{info, warn};
 use base64::{engine::general_purpose::STANDARD, Engine};
 
 use crate::ai::error::AIError;
@@ -14,13 +14,13 @@ use crate::ai::{
 };
 
 const DRAW_ENDPOINT_PATH: &str = "/v1/draw/nano-banana";
-const COMPLETIONS_ENDPOINT_PATH: &str = "/v1/draw/completions";
+const GENERATE_ENDPOINT_PATH: &str = "/v1/api/generate";
 const RESULT_ENDPOINT_PATH: &str = "/v1/draw/result";
 const DEFAULT_BASE_URL: &str = "https://grsai.dakka.com.cn";
 const DEFAULT_PRO_MODEL: &str = "nano-banana-pro";
 const POLL_INTERVAL_MS: u64 = 2000;
 
-const SUPPORTED_MODELS: [&str; 8] = [
+const SUPPORTED_MODELS: [&str; 10] = [
     "nano-banana-2",
     "nano-banana-pro",
     "nano-banana-pro-vt",
@@ -29,6 +29,8 @@ const SUPPORTED_MODELS: [&str; 8] = [
     "nano-banana-pro-4k-vip",
     "grsai/nano-banana-pro",
     "gpt-image-2",
+    "gpt-image-2-vip",
+    "grsai/gpt-image-2",
 ];
 
 fn decode_file_url_path(value: &str) -> String {
@@ -47,7 +49,6 @@ fn decode_file_url_path(value: &str) -> String {
     normalized.to_string()
 }
 
-// Used by /v1/draw/nano-banana — strips data URL prefix to send raw base64.
 fn encode_reference_for_grsai(source: &str) -> Option<String> {
     let trimmed = source.trim();
     if trimmed.is_empty() {
@@ -77,57 +78,20 @@ fn encode_reference_for_grsai(source: &str) -> Option<String> {
     } else {
         PathBuf::from(trimmed)
     };
-    let bytes = std::fs::read(path).ok()?;
-    Some(STANDARD.encode(bytes))
+    match std::fs::read(&path) {
+        Ok(bytes) => Some(STANDARD.encode(bytes)),
+        Err(e) => {
+            warn!(
+                "[GRSAI] encode_reference_for_grsai: failed to read file path={:?}, source_prefix={}, err={}",
+                path,
+                &trimmed[..trimmed.len().min(80)],
+                e
+            );
+            None
+        }
+    }
 }
 
-// Used by /v1/draw/completions (gpt-image-2) — keeps full data URL format
-// because the completions endpoint wraps OpenAI's API which expects complete data URLs.
-fn encode_reference_as_data_url(source: &str) -> Option<String> {
-    let trimmed = source.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-        return Some(trimmed.to_string());
-    }
-
-    // Already a full data URL — keep it as-is
-    if trimmed.starts_with("data:") {
-        return Some(trimmed.to_string());
-    }
-
-    // Raw base64 (heuristic) — assume PNG since we can't detect MIME
-    let likely_base64 = trimmed.len() > 256
-        && trimmed
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=');
-    if likely_base64 {
-        return Some(format!("data:image/png;base64,{}", trimmed));
-    }
-
-    // Local file path — read bytes and build a full data URL with detected MIME type
-    let path = if trimmed.starts_with("file://") {
-        PathBuf::from(decode_file_url_path(trimmed))
-    } else {
-        PathBuf::from(trimmed)
-    };
-    let bytes = std::fs::read(&path).ok()?;
-    let mime = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_ascii_lowercase())
-        .and_then(|ext| match ext.as_str() {
-            "jpg" | "jpeg" => Some("image/jpeg"),
-            "png" => Some("image/png"),
-            "webp" => Some("image/webp"),
-            "gif" => Some("image/gif"),
-            _ => None,
-        })
-        .unwrap_or("image/png");
-    Some(format!("data:{};base64,{}", mime, STANDARD.encode(bytes)))
-}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -147,17 +111,114 @@ struct DrawRequestBody {
 struct GptImageRequestBody {
     model: String,
     prompt: String,
-    image_size: String,
-    aspect_ratio: String,
+    images: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    urls: Option<Vec<String>>,
-    /// 必须传 "-1" 让接口立即返回 id（走轮询模式），否则默认是 SSE 流式响应
-    web_hook: String,
-    shut_progress: bool,
+    aspect_ratio: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_type: Option<String>,
 }
 
 fn is_gpt_image_model(model: &str) -> bool {
-    model == "gpt-image-2" || model == "grsai/gpt-image-2"
+    let m = model.strip_prefix("grsai/").unwrap_or(model);
+    m == "gpt-image-2" || m == "gpt-image-2-vip"
+}
+
+fn is_vip_model(model: &str) -> bool {
+    let m = model.strip_prefix("grsai/").unwrap_or(model);
+    m == "gpt-image-2-vip"
+}
+
+const REQUEST_TIMEOUT_SECS: u64 = 120;
+const CONNECT_TIMEOUT_SECS: u64 = 30;
+
+fn serialize_body<T: Serialize>(body: &T) -> Result<Vec<u8>, serde_json::Error> {
+    let json_bytes = serde_json::to_vec(body)?;
+    info!("[GRSAI] request body size: {} bytes", json_bytes.len());
+    Ok(json_bytes)
+}
+
+/// Resolve ratio to 1K pixel dimensions for gpt-image-2 (non-VIP).
+fn resolve_gpt_image2_pixel_size(ratio: &str) -> String {
+    match ratio {
+        "1:1" => "1024x1024",
+        "16:9" => "1672x941",
+        "9:16" => "941x1672",
+        "4:3" => "1443x1090",
+        "3:4" => "1090x1443",
+        "3:2" => "1536x1024",
+        "2:3" => "1024x1536",
+        "5:4" => "1408x1120",
+        "4:5" => "1120x1408",
+        "21:9" => "1920x832",
+        "9:21" => "832x1920",
+        "1:2" => "896x1792",
+        "2:1" => "1792x896",
+        _ => "1024x1024",
+    }
+    .to_string()
+}
+
+/// Resolve ratio + size to pixel dimensions for gpt-image-2-vip.
+/// VIP requires pixel values like "1024x1024", not ratio strings.
+fn resolve_vip_pixel_size(ratio: &str, size: &str) -> String {
+    let width_height = match ratio {
+        "1:1" => match size {
+            "4K" => (2880, 2880),
+            "2K" | "3K" => (2048, 2048),
+            _ => (1024, 1024),
+        },
+        "16:9" => match size {
+            "4K" => (3840, 2160),
+            "2K" | "3K" => (2048, 1152),
+            _ => (1280, 720),
+        },
+        "9:16" => match size {
+            "4K" => (2160, 3840),
+            "2K" | "3K" => (1152, 2048),
+            _ => (720, 1280),
+        },
+        "4:3" => match size {
+            "4K" => (3264, 2448),
+            "2K" | "3K" => (2304, 1728),
+            _ => (1152, 864),
+        },
+        "3:4" => match size {
+            "4K" => (2448, 3264),
+            "2K" | "3K" => (1728, 2304),
+            _ => (864, 1152),
+        },
+        "3:2" => match size {
+            "4K" => (3504, 2336),
+            "2K" | "3K" => (2048, 1360),
+            _ => (1536, 1024),
+        },
+        "2:3" => match size {
+            "4K" => (2336, 3504),
+            "2K" | "3K" => (1360, 2048),
+            _ => (1024, 1536),
+        },
+        "5:4" => match size {
+            "4K" => (3200, 2560),
+            "2K" | "3K" => (2240, 1792),
+            _ => (1120, 896),
+        },
+        "4:5" => match size {
+            "4K" => (2560, 3200),
+            "2K" | "3K" => (1792, 2240),
+            _ => (896, 1120),
+        },
+        "21:9" => match size {
+            "4K" => (3840, 1648),
+            "2K" | "3K" => (2912, 1248),
+            _ => (1456, 624),
+        },
+        _ => match size {
+            "4K" => (2048, 2048),
+            "2K" | "3K" => (2048, 2048),
+            _ => (1024, 1024),
+        },
+    };
+    format!("{}x{}", width_height.0, width_height.1)
 }
 
 pub struct GrsaiProvider {
@@ -168,8 +229,13 @@ pub struct GrsaiProvider {
 
 impl GrsaiProvider {
     pub fn new() -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(REQUEST_TIMEOUT_SECS))
+            .connect_timeout(Duration::from_secs(CONNECT_TIMEOUT_SECS))
+            .build()
+            .expect("Failed to build HTTP client");
         Self {
-            client: Client::new(),
+            client,
             api_key: Arc::new(RwLock::new(None)),
             base_url: DEFAULT_BASE_URL.to_string(),
         }
@@ -182,7 +248,7 @@ impl GrsaiProvider {
             .map(|(_, model)| model.to_string())
             .unwrap_or_else(|| request.model.clone());
 
-        if requested == "gpt-image-2" {
+        if requested == "gpt-image-2" || requested == "gpt-image-2-vip" {
             return requested;
         }
 
@@ -279,12 +345,15 @@ impl GrsaiProvider {
             .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
 
         info!("[GRSAI API] URL: {}", endpoint);
+        let body_bytes = serialize_body(&body)
+            .map_err(|e| AIError::Provider(format!("Failed to serialize request body: {}", e)))?;
+
         let response = self
             .client
             .post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .body(body_bytes)
             .send()
             .await?;
 
@@ -300,45 +369,51 @@ impl GrsaiProvider {
         response.json::<Value>().await.map_err(AIError::from)
     }
 
-    async fn request_completions(&self, request: &GenerateRequest, model: String) -> Result<Value, AIError> {
+    async fn request_generate(&self, request: &GenerateRequest, model: String) -> Result<String, AIError> {
         let reference_count = request.reference_images.as_ref().map(|v| v.len()).unwrap_or(0);
-        let body = GptImageRequestBody {
-            model,
-            prompt: request.prompt.clone(),
-            image_size: request.size.clone(),
-            aspect_ratio: request.aspect_ratio.clone(),
-            urls: request
-                .reference_images
-                .as_ref()
-                .map(|images| {
-                    images
-                        .iter()
-                        .filter_map(|image| encode_reference_as_data_url(image))
-                        .collect::<Vec<_>>()
-                })
-                .filter(|images| !images.is_empty()),
-            web_hook: "-1".to_string(),
-            shut_progress: true,
-        };
-        info!(
-            "[GRSAI Completions] reference_images={}, encoded_urls={}",
-            reference_count,
-            body.urls.as_ref().map(|v| v.len()).unwrap_or(0)
-        );
-
-        if request
+        let encoded_images: Vec<String> = request
             .reference_images
             .as_ref()
-            .map(|images| !images.is_empty())
-            .unwrap_or(false)
-            && body.urls.is_none()
-        {
+            .map(|images| {
+                images
+                    .iter()
+                    .filter_map(|image| encode_reference_for_grsai(image))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        if reference_count > 0 && encoded_images.is_empty() {
             return Err(AIError::InvalidRequest(
                 "Reference images are present but none could be encoded for GRSAI".to_string(),
             ));
         }
 
-        let endpoint = format!("{}{}", self.base_url, COMPLETIONS_ENDPOINT_PATH);
+        let aspect_ratio = if is_vip_model(&model) {
+            Some(resolve_vip_pixel_size(&request.aspect_ratio, &request.size))
+        } else {
+            Some(resolve_gpt_image2_pixel_size(&request.aspect_ratio))
+        };
+
+        let body = GptImageRequestBody {
+            model: model.clone(),
+            prompt: request.prompt.clone(),
+            images: encoded_images.clone(),
+            aspect_ratio: aspect_ratio.clone(),
+            reply_type: Some("async".to_string()),
+        };
+
+        let body_json = serde_json::to_string(&body).unwrap_or_default();
+        let body_preview: String = body_json.chars().take(300).collect();
+        info!(
+            "[GRSAI Generate] model={}, refs={}, aspect={}, body_len={}, json_preview={}",
+            model,
+            encoded_images.len(),
+            aspect_ratio.as_deref().unwrap_or(""),
+            body_json.len(),
+            body_preview
+        );
+
+        let endpoint = format!("{}{}", self.base_url, GENERATE_ENDPOINT_PATH);
         let api_key = self
             .api_key
             .read()
@@ -346,13 +421,16 @@ impl GrsaiProvider {
             .clone()
             .ok_or_else(|| AIError::InvalidRequest("API key not set".to_string()))?;
 
-        info!("[GRSAI Completions API] URL: {}", endpoint);
+        info!("[GRSAI Generate API] URL: {}", endpoint);
+        let body_bytes = serialize_body(&body)
+            .map_err(|e| AIError::Provider(format!("Failed to serialize request body: {}", e)))?;
+
         let response = self
             .client
             .post(&endpoint)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .json(&body)
+            .body(body_bytes)
             .send()
             .await?;
 
@@ -360,13 +438,25 @@ impl GrsaiProvider {
             let status = response.status();
             let error_text = response.text().await.unwrap_or_default();
             return Err(AIError::Provider(format!(
-                "GRSAI completions request failed {}: {}",
+                "GRSAI generate request failed {}: {}",
                 status, error_text
             )));
         }
 
-        // 因为 webHook="-1" 强制走非流式模式，接口立即返回 { code, msg, data: { id } }
-        response.json::<Value>().await.map_err(AIError::from)
+        let response_body: Value = response.json().await.map_err(AIError::from)?;
+        // Async response: {"id": "...", "status": "running", "progress": 0}
+        let task_id = response_body
+            .get("id")
+            .and_then(|id| id.as_str())
+            .ok_or_else(|| {
+                let status = response_body.get("status").and_then(|s| s.as_str()).unwrap_or("unknown");
+                let error = response_body.get("error").and_then(|e| e.as_str()).unwrap_or("");
+                AIError::Provider(format!(
+                    "GRSAI generate submit failed (status={}, error={}): {:?}",
+                    status, error, response_body
+                ))
+            })?;
+        Ok(task_id.to_string())
     }
 
     async fn poll_result_once(&self, task_id: &str) -> Result<ProviderTaskPollResult, AIError> {
@@ -405,7 +495,7 @@ impl GrsaiProvider {
 
         match payload.get("status").and_then(|raw| raw.as_str()) {
             Some("running") | None => Ok(ProviderTaskPollResult::Running),
-            Some("failed") => {
+            Some("failed") | Some("violation") => {
                 let reason = payload
                     .get("error")
                     .and_then(|raw| raw.as_str())
@@ -459,6 +549,7 @@ impl AIProvider for GrsaiProvider {
             "grsai/nano-banana-2".to_string(),
             "grsai/nano-banana-pro".to_string(),
             "grsai/gpt-image-2".to_string(),
+            "grsai/gpt-image-2-vip".to_string(),
         ]
     }
 
@@ -475,11 +566,15 @@ impl AIProvider for GrsaiProvider {
     async fn submit_task(&self, request: GenerateRequest) -> Result<ProviderTaskSubmission, AIError> {
         let model = self.normalize_requested_model(&request);
 
-        let raw_response = if is_gpt_image_model(&request.model) {
-            self.request_completions(&request, model).await?
-        } else {
-            self.request_draw(&request, model).await?
-        };
+        if is_gpt_image_model(&request.model) {
+            let task_id = self.request_generate(&request, model).await?;
+            return Ok(ProviderTaskSubmission::Queued(ProviderTaskHandle {
+                task_id,
+                metadata: None,
+            }));
+        }
+
+        let raw_response = self.request_draw(&request, model).await?;
         let payload = Self::resolve_task_payload(&raw_response)?;
 
         if let Some(url) = Self::extract_result_url(payload) {
@@ -507,11 +602,12 @@ impl AIProvider for GrsaiProvider {
             model, request.size, request.aspect_ratio
         );
 
-        let raw_response = if is_gpt_image_model(&request.model) {
-            self.request_completions(&request, model).await?
-        } else {
-            self.request_draw(&request, model).await?
-        };
+        if is_gpt_image_model(&request.model) {
+            let task_id = self.request_generate(&request, model).await?;
+            return self.poll_result_until_complete(&task_id).await;
+        }
+
+        let raw_response = self.request_draw(&request, model).await?;
         let payload = Self::resolve_task_payload(&raw_response)?;
 
         if let Some(url) = Self::extract_result_url(payload) {

@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose, Engine as _};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -213,6 +214,64 @@ impl DashScopeProvider {
         })
     }
 
+    /// Convert a local file path to a base64 data URL so DashScope can inspect it.
+    /// HTTP/HTTPS URLs are returned unchanged.
+    async fn resolve_url_for_dashscope(source: &str) -> Result<String, AIError> {
+        if source.starts_with("http://") || source.starts_with("https://") {
+            return Ok(source.to_string());
+        }
+
+        // Normalise file:// → local path
+        let path = if source.starts_with("file:///") {
+            // file:///C:/Users/... or file:///C:\Users\...
+            source[8..].to_string()
+        } else if source.starts_with("file://") {
+            source[7..].to_string()
+        } else {
+            source.to_string()
+        };
+
+        let bytes = tokio::fs::read(&path).await.map_err(|e| {
+            AIError::Provider(format!("Failed to read image '{}': {}", path, e))
+        })?;
+
+        let mime = match path.to_lowercase().split('.').last() {
+            Some("png") => "image/png",
+            Some("webp") => "image/webp",
+            Some("gif") => "image/gif",
+            _ => "image/jpeg",
+        };
+
+        let encoded = general_purpose::STANDARD.encode(&bytes);
+        Ok(format!("data:{};base64,{}", mime, encoded))
+    }
+
+    /// Pre-resolve all image URLs in the request so local paths become base64 data URLs.
+    async fn resolve_request_images(request: GenerateRequest) -> Result<GenerateRequest, AIError> {
+        let mut req = request;
+
+        // Resolve reference_images
+        if let Some(ref_images) = req.reference_images.take() {
+            let mut resolved = Vec::with_capacity(ref_images.len());
+            for url in ref_images {
+                resolved.push(Self::resolve_url_for_dashscope(&url).await?);
+            }
+            req.reference_images = Some(resolved);
+        }
+
+        // Resolve first_frame_url / last_frame_url inside extra_params
+        if let Some(ref mut params) = req.extra_params {
+            for key in ["first_frame_url", "last_frame_url"] {
+                if let Some(val) = params.get(key).and_then(|v| v.as_str()).map(|s| s.to_string()) {
+                    let resolved = Self::resolve_url_for_dashscope(&val).await?;
+                    params.insert(key.to_string(), json!(resolved));
+                }
+            }
+        }
+
+        Ok(req)
+    }
+
     async fn submit_task(
         &self,
         api_key: &str,
@@ -401,6 +460,7 @@ impl AIProvider for DashScopeProvider {
             )));
         }
 
+        let request = Self::resolve_request_images(request).await?;
         let task_id = self.submit_task(&api_key, &request, &model).await?;
 
         Ok(ProviderTaskSubmission::Queued(ProviderTaskHandle {
@@ -445,6 +505,7 @@ impl AIProvider for DashScopeProvider {
             )));
         }
 
+        let request = Self::resolve_request_images(request).await?;
         let task_id = self.submit_task(&api_key, &request, &model).await?;
         self.poll_task_until_complete(&api_key, &task_id).await
     }
