@@ -25,4 +25,5 @@ dist-ssr
 
 ComfyUI/
 ComfyUI_frontend/
-Henji-AI/
+Henji-AI/process_data.js
+process_data.js
